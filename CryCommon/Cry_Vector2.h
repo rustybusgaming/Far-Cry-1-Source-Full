@@ -10,9 +10,25 @@
 //
 //////////////////////////////////////////////////////////////////////
 
+// [webport] Canonical entry point for the math template cluster.
+//
+// Cry_Vector2/3, Cry_Quat and Cry_Matrix are mutually recursive, and several
+// of them need COMPLETE types from each other (Quaternion_tpl stores a Vec3
+// by value), not just declarations. Exactly one include order satisfies all of
+// them, and Cry_Math.h is the header that establishes it.
+//
+// This include sits ABOVE the include guard on purpose. If it sat below, the
+// guard would already be set when the cluster recursed back into this header,
+// the body would be skipped, and the type would still be incomplete at the
+// point of use -- the deadlock that made these four headers unbuildable
+// standalone. Hoisting it means any entry point funnels through Cry_Math.h's
+// ordering, and the redundant re-entry here is a cheap no-op.
+#include "Cry_Math.h"
+
 #ifndef CRYTEK_CRYVECTOR2_H
 #define CRYTEK_CRYVECTOR2_H
 
+#include "Cry_MathFwd.h"   // [webport] declarations for the math cluster
 #include "platform.h"
 #include "Cry_Vector3.h"
 

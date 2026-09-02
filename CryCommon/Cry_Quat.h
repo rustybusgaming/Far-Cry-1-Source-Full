@@ -10,9 +10,25 @@
 //
 //////////////////////////////////////////////////////////////////////
 
+// [webport] Canonical entry point for the math template cluster.
+//
+// Cry_Vector2/3, Cry_Quat and Cry_Matrix are mutually recursive, and several
+// of them need COMPLETE types from each other (Quaternion_tpl stores a Vec3
+// by value), not just declarations. Exactly one include order satisfies all of
+// them, and Cry_Math.h is the header that establishes it.
+//
+// This include sits ABOVE the include guard on purpose. If it sat below, the
+// guard would already be set when the cluster recursed back into this header,
+// the body would be skipped, and the type would still be incomplete at the
+// point of use -- the deadlock that made these four headers unbuildable
+// standalone. Hoisting it means any entry point funnels through Cry_Math.h's
+// ordering, and the redundant re-entry here is a cheap no-op.
+#include "Cry_Math.h"
+
 #ifndef _CRYQUAT_H
 #define _CRYQUAT_H
 
+#include "Cry_MathFwd.h"   // [webport] declarations for the math cluster
 #include "platform.h"
 #include "Cry_Vector2.h"
 #include "Cry_Vector3.h"
@@ -104,10 +120,20 @@ template <class F> struct Quaternion_tpl
 
 	template<class F1,int SI,int SJ> 
 	explicit ILINE Quaternion_tpl(const Matrix33_tpl<F1,SI,SJ>& m)	{	*this=GetQuatFromMat33(m); }
-	template<class T>	
-	explicit ILINE Quaternion_tpl(const Matrix34_tpl<T>& m)	{	*this=GetQuatFromMat33(Matrix33(m));	} 
-	template<class F1,int SI,int SJ>	
-	explicit ILINE Quaternion_tpl(const Matrix44_tpl<F1,SI,SJ>& m) { *this=GetQuatFromMat33(Matrix33_tpl<f32,3,1>(m));	} 
+	// [webport] Declared here, defined at the bottom of Cry_Matrix.h.
+	//
+	// Both bodies name a CONCRETE matrix type -- Matrix33 and
+	// Matrix33_tpl<f32,3,1>. Because those are non-dependent, clang must
+	// instantiate them where the body is parsed, which is before Cry_Matrix.h
+	// has defined Matrix33_tpl. (The ctor above is fine: Matrix33_tpl<F1,SI,SJ>
+	// is dependent, so its instantiation is correctly deferred.)
+	//
+	// Moving just these two definitions past the point where the matrix types
+	// are complete resolves it without changing their semantics.
+	template<class T>
+	explicit ILINE Quaternion_tpl(const Matrix34_tpl<T>& m);
+	template<class F1,int SI,int SJ>
+	explicit ILINE Quaternion_tpl(const Matrix44_tpl<F1,SI,SJ>& m);
 
 
 	//CONSTRUCTOR: implement the copy/casting/assignement constructor:	

@@ -1,0 +1,7 @@
+# Web port build output
+/build/
+/build-*/
+compile_commands.json
+
+# Triage artefacts
+/triage-*.json

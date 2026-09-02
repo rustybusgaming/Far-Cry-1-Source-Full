@@ -7,6 +7,13 @@
 
 =============================================================================*/
 
+// [webport] This header was never self-contained: it names engine math types
+// but included nothing, relying on always being included after Cry_Math.h in
+// the .vcproj's fixed compile order. Any build that compiles it first -- or
+// simply in a different order -- fails. Including its actual dependency makes
+// the header stand on its own.
+#include "Cry_Math.h"
+
 #ifndef __COLORDEFS_H__
 #define __COLORDEFS_H__
 
