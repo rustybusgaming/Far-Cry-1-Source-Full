@@ -35,6 +35,7 @@ DEFINES = [
     "LINUX", "LINUX64", "_LINUX",
     "NOT_USE_BINK_SDK", "NOT_USE_DIVX_SDK", "NOT_USE_PUNKBUSTER_SDK",
     "EXCLUDE_UBICOM_CLIENT_SDK", "_CRY_WEBPORT",
+    "_LARGEFILE64_SOURCE", "_FILE_OFFSET_BITS=64",
 ]
 
 SILENCED = [
@@ -130,6 +131,15 @@ EXCLUDED = {
     "DownloadManager.cpp": "WinInet; becomes fetch() on the web",
     "getdxver.cpp":       "DirectX version probe via COM",
 
+    # Win32 OVERLAPPED (asynchronous) file I/O: CreateEvent + ReadFileEx +
+    # GetOverlappedResult + CancelIo + SleepEx alertable waits. There is no
+    # honest shim for this -- it is a real async-I/O redesign, and on the web
+    # it has to become either a worker thread or an async fetch pipeline.
+    # Stubbing it would compile and then silently stream nothing.
+    "RefReadStream.cpp":      "Win32 overlapped I/O; needs an async redesign",
+    "RefReadStreamProxy.cpp": "Win32 overlapped I/O; needs an async redesign",
+    "RefStreamEngine.cpp":    "Win32 overlapped I/O; needs an async redesign",
+
     # CryCommon headers that are valid only on a platform we are not building.
     # Compiling them here would be meaningless, not progress.
     "Win32specific.h":    "Win32 platform header (we build the LINUX seam)",
@@ -137,6 +147,12 @@ EXCLUDED = {
     "XboxSpecific.h":     "Xbox platform header",
     "Linux32Specific.h":  "32-bit Linux variant; the port targets LINUX64",
     "_TinyWindow.h":      "Win32 common-controls GUI wrapper (commctrl)",
+
+    # A byte-identical stale copy of CryPhysics/CryPhysics.h that nothing in
+    # CryCommon or CrySystem includes. Its "#include utils.h" only resolves as
+    # a sibling inside the CryPhysics module, so it is that module's header,
+    # not a CryCommon interface, and belongs to the CryPhysics port.
+    "CryCommon/CryPhysics.h": "stale duplicate of CryPhysics/CryPhysics.h",
 }
 
 

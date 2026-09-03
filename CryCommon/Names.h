@@ -1,3 +1,8 @@
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "VertexFormats.h"
+
 #ifndef __CNAME_H__
 #define __CNAME_H__
 

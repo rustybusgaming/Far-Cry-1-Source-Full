@@ -9,6 +9,10 @@
 //	-:Created by Anton Knyazev
 //
 //////////////////////////////////////////////////////////////////////
+// [webport] Not self-contained: names the primitives:: geometry types but included nothing,
+// relying on the .vcproj compile order. Added its real dependency.
+#include "primitives.h"
+
 
 #ifndef physinterface_h
 #define physinterface_h

@@ -50,6 +50,13 @@ set(CRY_COMMON_DEFINES
     EXCLUDE_UBICOM_CLIENT_SDK   # Ubisoft.com/ -- needs curl + live services
 
     _CRY_WEBPORT               # our own guard for web-port-specific divergence
+
+    # CryPak.cpp's LINUX branch uses struct stat64 / _fstat64 explicitly.
+    # glibc only declares the *64 forms under _LARGEFILE64_SOURCE, and
+    # _FILE_OFFSET_BITS=64 makes the plain forms 64-bit as well so the two
+    # agree. Both are no-ops on Emscripten, where off_t is already 64-bit.
+    _LARGEFILE64_SOURCE
+    _FILE_OFFSET_BITS=64
 )
 
 # ------------------------------------------------------------------------------

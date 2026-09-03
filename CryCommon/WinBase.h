@@ -62,6 +62,10 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <ctype.h>
+#include <dirent.h>
+#include <fnmatch.h>
+#include <string>
+#include <vector>
 
 //////////////////////////////////////////////////////////////////////////
 // Scalar types not already covered by Linux{,64}Specific.h
@@ -107,6 +111,19 @@ typedef void*               HMENU;
 typedef void*               HKEY;
 
 //////////////////////////////////////////////////////////////////////////
+// WinInet
+//
+// HTTPDownloader.h declares HINTERNET members, and headers that merely mention
+// the type (ScriptBinding.cpp, ScriptObjectSystem.cpp) cannot parse without
+// it. The typedef is provided so those headers compile; the WinInet FUNCTIONS
+// are deliberately NOT shimmed, so HTTPDownloader.cpp itself still fails to
+// build and stays excluded until it is rewritten over fetch()/XHR in
+// Milestone 3. A stub that compiled and silently downloaded nothing would be
+// considerably worse than a build error.
+//////////////////////////////////////////////////////////////////////////
+typedef void* HINTERNET;
+
+//////////////////////////////////////////////////////////////////////////
 // Common Win32 POD structures
 //
 // Layout-compatible with the Win32 originals: several of these are memcpy'd
@@ -133,6 +150,19 @@ typedef struct _GUID {
 	unsigned short Data3;
 	unsigned char  Data4[8];
 } GUID;
+#endif
+
+//////////////////////////////////////////////////////////////////////////
+// File attribute constants
+//
+// Declared up here with the other constants because both GetFileAttributes and
+// SetFileAttributes reference them, and the two live several hundred lines
+// apart. LinuxSpecific.h already supplies FILE_ATTRIBUTE_NORMAL.
+//////////////////////////////////////////////////////////////////////////
+#ifndef FILE_ATTRIBUTE_DIRECTORY
+#	define FILE_ATTRIBUTE_DIRECTORY   0x00000010
+#	define FILE_ATTRIBUTE_READONLY    0x00000001
+#	define INVALID_FILE_ATTRIBUTES    ((DWORD)-1)
 #endif
 
 //////////////////////////////////////////////////////////////////////////
@@ -259,6 +289,321 @@ inline void GetLocalTime(LPSYSTEMTIME st)
 
 inline void GetSystemTime(LPSYSTEMTIME st) { GetLocalTime(st); }
 
+// Defined further down with the case-insensitive file open; declared here
+// because the directory-iteration helpers below need it too.
+inline bool cry_resolve_nocase(const char* path, std::string& out);
+
+//////////////////////////////////////////////////////////////////////////
+// MSVC directory iteration: _findfirst64 / _findnext64 / _findclose
+//
+// CryPak.cpp walks pak directories with the Microsoft CRT's find API, and
+// CSystem::Deltree uses it to recurse. There is no POSIX equivalent with the
+// same shape -- opendir/readdir have no notion of a wildcard -- so the pattern
+// matching is done here with fnmatch().
+//
+// Two Win32 behaviours are reproduced deliberately:
+//
+//   * Matching is CASE-INSENSITIVE (FNM_CASEFOLD). "*.PAK" has to find
+//     "levels.pak", exactly as it does on NTFS, or the engine mounts nothing.
+//
+//   * "." and ".." ARE returned when they match the pattern, as FindFirstFile
+//     does. Callers such as Deltree test for them explicitly before recursing;
+//     silently hiding them would change behaviour those guards depend on.
+//
+// The handle is a heap-allocated context cast to intptr_t, matching the CRT's
+// own contract: -1 means failure, and every successful _findfirst64 must be
+// paired with a _findclose.
+//////////////////////////////////////////////////////////////////////////
+
+#define _A_NORMAL  0x00
+#define _A_RDONLY  0x01
+#define _A_HIDDEN  0x02
+#define _A_SYSTEM  0x04
+#define _A_SUBDIR  0x10
+#define _A_ARCH    0x20
+
+// The engine writes both spellings, and writes them with an explicit "struct"
+// keyword in places (ICryPak.h:252 uses "struct _finddata_t"), so the real tag
+// has to be _finddata_t and the 64-bit name an alias of it -- not the other way
+// round. Only .name and .attrib are ever read, so one layout serves both.
+struct _finddata_t
+{
+	unsigned int  attrib;
+	time_t        time_create;
+	time_t        time_access;
+	time_t        time_write;
+	long long     size;
+	char          name[260];
+};
+// The engine writes BOTH "struct _finddata_t" and "struct __finddata64_t"
+// (CryPak.h:200, ICryPak.h:252), so both need to be real struct tags -- a
+// typedef alias is rejected after the struct keyword. Deriving keeps a single
+// layout and lets a __finddata64_t* be passed wherever a _finddata_t* is
+// expected, which is how the shared directory walk below is reused.
+struct __finddata64_t : public _finddata_t {};
+
+struct _CryFindCtx
+{
+	DIR*        dir;
+	std::string directory;   // directory part of the filespec, "" -> "."
+	std::string pattern;     // wildcard part
+};
+
+inline bool _cry_find_step(_CryFindCtx* ctx, struct _finddata_t* fi)
+{
+	struct dirent* e;
+	while ((e = readdir(ctx->dir)) != NULL)
+	{
+		if (fnmatch(ctx->pattern.c_str(), e->d_name, FNM_CASEFOLD) != 0)
+			continue;
+
+		std::string full = ctx->directory.empty()
+		                 ? std::string(e->d_name)
+		                 : ctx->directory + "/" + e->d_name;
+
+		struct stat st;
+		unsigned int attrib = _A_NORMAL;
+		long long size = 0;
+		time_t mtime = 0;
+		if (stat(full.c_str(), &st) == 0)
+		{
+			if (S_ISDIR(st.st_mode))     attrib |= _A_SUBDIR;
+			if (!(st.st_mode & S_IWUSR)) attrib |= _A_RDONLY;
+			size  = (long long)st.st_size;
+			mtime = st.st_mtime;
+		}
+		if (e->d_name[0] == '.' && !(attrib & _A_SUBDIR))
+			attrib |= _A_HIDDEN;
+
+		fi->attrib      = attrib;
+		fi->size        = size;
+		fi->time_write  = mtime;
+		fi->time_create = mtime;
+		fi->time_access = mtime;
+		strncpy(fi->name, e->d_name, sizeof(fi->name) - 1);
+		fi->name[sizeof(fi->name) - 1] = '\0';
+		return true;
+	}
+	return false;
+}
+
+inline intptr_t _findfirst64(const char* filespec, struct _finddata_t* fi)
+{
+	if (!filespec || !fi) return -1;
+
+	std::string spec(filespec);
+	for (size_t i = 0; i < spec.size(); ++i)
+		if (spec[i] == '\\') spec[i] = '/';
+
+	std::string dir, pat;
+	size_t slash = spec.rfind('/');
+	if (slash == std::string::npos) { dir = ""; pat = spec; }
+	else { dir = spec.substr(0, slash); pat = spec.substr(slash + 1); }
+	if (pat.empty()) pat = "*";
+
+	// The directory itself may be mis-cased, same as any other asset path.
+	std::string opendir_path = dir.empty() ? std::string(".") : dir;
+	DIR* d = opendir(opendir_path.c_str());
+	if (!d)
+	{
+		std::string resolved;
+		if (!dir.empty() && cry_resolve_nocase(dir.c_str(), resolved))
+		{
+			d = opendir(resolved.c_str());
+			if (d) dir = resolved;
+		}
+		if (!d) return -1;
+	}
+
+	_CryFindCtx* ctx = new _CryFindCtx;
+	ctx->dir = d;
+	ctx->directory = dir;
+	ctx->pattern = pat;
+
+	if (!_cry_find_step(ctx, fi))
+	{
+		closedir(ctx->dir);
+		delete ctx;
+		return -1;
+	}
+	return (intptr_t)ctx;
+}
+
+inline int _findnext64(intptr_t handle, struct _finddata_t* fi)
+{
+	if (handle == -1 || !fi) return -1;
+	_CryFindCtx* ctx = (_CryFindCtx*)handle;
+	return _cry_find_step(ctx, fi) ? 0 : -1;
+}
+
+inline intptr_t _findfirst(const char* filespec, struct _finddata_t* fi)
+{ return _findfirst64(filespec, fi); }
+
+inline int _findnext(intptr_t handle, struct _finddata_t* fi)
+{ return _findnext64(handle, fi); }
+
+inline int _findclose(intptr_t handle)
+{
+	if (handle == -1) return -1;
+	_CryFindCtx* ctx = (_CryFindCtx*)handle;
+	if (ctx->dir) closedir(ctx->dir);
+	delete ctx;
+	return 0;
+}
+
+// CryPak.cpp:734 uses "struct stat64" + _fstat64 in its LINUX branch. glibc
+// exposes those under _LARGEFILE64_SOURCE (set by the build); this just
+// supplies the underscore-prefixed CRT spelling.
+inline int _fstat64(int fd, struct stat64* st) { return fstat64(fd, st); }
+
+// _mkdir is the MSVC spelling; POSIX mkdir takes a mode. 0755 matches what the
+// engine's directories need (it creates game/save/log folders it then writes).
+inline int _mkdir(const char* path) { return mkdir(path, 0755); }
+inline int _rmdir(const char* path) { return rmdir(path); }
+
+// CSystem::Deltree removes a tree with these. Win32 returns nonzero on
+// success, the opposite of unlink()/rmdir(), so the result has to be inverted.
+inline BOOL DeleteFile(const char* path)
+{ return (path && unlink(path) == 0) ? TRUE : FALSE; }
+
+inline BOOL RemoveDirectory(const char* path)
+{ return (path && rmdir(path) == 0) ? TRUE : FALSE; }
+
+inline BOOL CreateDirectory(const char* path, void* /*lpSecurityAttributes*/)
+{ return (path && mkdir(path, 0755) == 0) ? TRUE : FALSE; }
+
+//////////////////////////////////////////////////////////////////////////
+// GlobalMemoryStatus
+//
+// ScriptObjectSystem.cpp exposes total/available physical memory to Lua.
+// sysinfo() provides the same numbers on Linux; on Emscripten there is no
+// system memory to report, so the wasm heap size is the honest answer.
+//////////////////////////////////////////////////////////////////////////
+typedef struct _MEMORYSTATUS {
+	DWORD dwLength;
+	DWORD dwMemoryLoad;
+	size_t dwTotalPhys;
+	size_t dwAvailPhys;
+	size_t dwTotalPageFile;
+	size_t dwAvailPageFile;
+	size_t dwTotalVirtual;
+	size_t dwAvailVirtual;
+} MEMORYSTATUS, *LPMEMORYSTATUS;
+
+inline void GlobalMemoryStatus(LPMEMORYSTATUS ms)
+{
+	if (!ms) return;
+	memset(ms, 0, sizeof(*ms));
+	ms->dwLength = (DWORD)sizeof(*ms);
+
+#if !defined(CRY_WASM)
+	long pages     = sysconf(_SC_PHYS_PAGES);
+	long avpages   = sysconf(_SC_AVPHYS_PAGES);
+	long page_size = sysconf(_SC_PAGESIZE);
+	if (pages > 0 && page_size > 0)
+	{
+		ms->dwTotalPhys = (size_t)pages * (size_t)page_size;
+		ms->dwAvailPhys = (avpages > 0) ? (size_t)avpages * (size_t)page_size : 0;
+		ms->dwMemoryLoad = ms->dwTotalPhys
+			? (DWORD)(100 - (ms->dwAvailPhys * 100 / ms->dwTotalPhys)) : 0;
+	}
+#endif
+	ms->dwTotalVirtual  = ms->dwTotalPhys;
+	ms->dwAvailVirtual  = ms->dwAvailPhys;
+	ms->dwTotalPageFile = ms->dwTotalPhys;
+	ms->dwAvailPageFile = ms->dwAvailPhys;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Multimedia timer
+//
+// timeGetTime() is winmm's millisecond clock. On Win32 it differs from
+// GetTickCount only in its settable resolution, which is meaningless here.
+//////////////////////////////////////////////////////////////////////////
+inline DWORD timeGetTime() { return GetTickCount(); }
+
+//////////////////////////////////////////////////////////////////////////
+// SYSTEMTIME <-> FILETIME
+//
+// ZipDirStructures.cpp converts the DOS timestamps stored in a .pak's
+// directory into FILETIME. A Win32 FILETIME counts 100-nanosecond intervals
+// since 1601-01-01 UTC -- not the Unix epoch -- so the conversion needs the
+// 11644473600-second offset between the two epochs.
+//////////////////////////////////////////////////////////////////////////
+inline BOOL SystemTimeToFileTime(const SYSTEMTIME* st, FILETIME* ft)
+{
+	if (!st || !ft) return FALSE;
+
+	struct tm t;
+	memset(&t, 0, sizeof(t));
+	t.tm_year = st->wYear - 1900;
+	t.tm_mon  = st->wMonth - 1;
+	t.tm_mday = st->wDay;
+	t.tm_hour = st->wHour;
+	t.tm_min  = st->wMinute;
+	t.tm_sec  = st->wSecond;
+
+	// timegm() interprets the fields as UTC; mktime() would apply the local
+	// timezone and shift every pak timestamp by the machine's offset.
+	time_t secs = timegm(&t);
+	if (secs == (time_t)-1) return FALSE;
+
+	const unsigned long long EPOCH_DIFF = 11644473600ULL;  // 1601 -> 1970, seconds
+	unsigned long long v = ((unsigned long long)secs + EPOCH_DIFF) * 10000000ULL
+	                     + (unsigned long long)st->wMilliseconds * 10000ULL;
+
+	ft->dwLowDateTime  = (DWORD)(v & 0xFFFFFFFFULL);
+	ft->dwHighDateTime = (DWORD)(v >> 32);
+	return TRUE;
+}
+
+inline BOOL FileTimeToSystemTime(const FILETIME* ft, SYSTEMTIME* st)
+{
+	if (!ft || !st) return FALSE;
+
+	unsigned long long v = ((unsigned long long)ft->dwHighDateTime << 32)
+	                     | (unsigned long long)ft->dwLowDateTime;
+	const unsigned long long EPOCH_DIFF = 11644473600ULL;
+	unsigned long long total = v / 10000000ULL;
+	if (total < EPOCH_DIFF) return FALSE;
+
+	time_t secs = (time_t)(total - EPOCH_DIFF);
+	struct tm t;
+	gmtime_r(&secs, &t);
+	st->wYear   = (WORD)(t.tm_year + 1900);
+	st->wMonth  = (WORD)(t.tm_mon + 1);
+	st->wDayOfWeek = (WORD)t.tm_wday;
+	st->wDay    = (WORD)t.tm_mday;
+	st->wHour   = (WORD)t.tm_hour;
+	st->wMinute = (WORD)t.tm_min;
+	st->wSecond = (WORD)t.tm_sec;
+	st->wMilliseconds = (WORD)((v / 10000ULL) % 1000ULL);
+	return TRUE;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// SetFileAttributes
+//
+// xml.cpp calls this with FILE_ATTRIBUTE_NORMAL before writing, i.e. "clear
+// the read-only bit". That is the only attribute with a POSIX meaning, so it
+// is the only one honoured; the rest are accepted and ignored rather than
+// failing, which matches how the engine uses the call.
+//////////////////////////////////////////////////////////////////////////
+inline BOOL SetFileAttributes(const char* lpFileName, DWORD dwAttributes)
+{
+	if (!lpFileName) return FALSE;
+	struct stat st;
+	if (stat(lpFileName, &st) != 0) return FALSE;
+
+	mode_t mode = st.st_mode;
+	if (dwAttributes & FILE_ATTRIBUTE_READONLY)
+		mode &= ~(mode_t)(S_IWUSR | S_IWGRP | S_IWOTH);
+	else
+		mode |= S_IWUSR;
+
+	return chmod(lpFileName, mode) == 0 ? TRUE : FALSE;
+}
+
 //////////////////////////////////////////////////////////////////////////
 // Diagnostics
 //////////////////////////////////////////////////////////////////////////
@@ -343,8 +688,6 @@ inline int comparePathNames(const char* a, const char* b, size_t len)
 // case-insensitive directory scan. Write modes fall back to the literal path
 // so that creating a new file still works.
 //////////////////////////////////////////////////////////////////////////
-#include <dirent.h>
-#include <string>
 
 inline bool cry_resolve_nocase(const char* path, std::string& out)
 {
@@ -424,6 +767,257 @@ inline FILE* fopen_nocase(const char* file, const char* mode)
 		return fopen(p.c_str(), mode);
 	}
 	return NULL;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// MSVC CRT functions with no POSIX spelling
+//
+// These are plain CRT calls the engine makes that simply do not exist outside
+// the Microsoft runtime. Each has an exact, well-defined equivalent.
+//////////////////////////////////////////////////////////////////////////
+inline char* strlwr(char* s)
+{
+	if (s) for (char* p = s; *p; ++p) *p = (char)tolower((unsigned char)*p);
+	return s;
+}
+inline char* _strlwr(char* s) { return strlwr(s); }
+
+inline char* strupr(char* s)
+{
+	if (s) for (char* p = s; *p; ++p) *p = (char)toupper((unsigned char)*p);
+	return s;
+}
+
+inline int memicmp(const void* a, const void* b, size_t n)
+{
+	const unsigned char* pa = (const unsigned char*)a;
+	const unsigned char* pb = (const unsigned char*)b;
+	for (size_t i = 0; i < n; ++i)
+	{
+		int ca = tolower(pa[i]), cb = tolower(pb[i]);
+		if (ca != cb) return ca < cb ? -1 : 1;
+	}
+	return 0;
+}
+inline int _memicmp(const void* a, const void* b, size_t n) { return memicmp(a, b, n); }
+
+// itoa() is not in any standard; radix 10 is all the engine ever asks for,
+// but the other radices are cheap and leaving them out would be a trap.
+inline char* itoa(int value, char* str, int radix)
+{
+	if (!str) return NULL;
+	if (radix < 2 || radix > 36) { str[0] = '\0'; return str; }
+
+	char buf[36];
+	int i = 0;
+	unsigned int uv = (value < 0 && radix == 10) ? (unsigned int)(-value)
+	                                             : (unsigned int)value;
+	if (uv == 0) buf[i++] = '0';
+	while (uv) { int d = uv % radix; buf[i++] = (char)(d < 10 ? '0' + d : 'a' + d - 10); uv /= radix; }
+	if (value < 0 && radix == 10) buf[i++] = '-';
+
+	int j = 0;
+	while (i > 0) str[j++] = buf[--i];
+	str[j] = '\0';
+	return str;
+}
+inline char* _itoa(int v, char* s, int r) { return itoa(v, s, r); }
+
+// MulDiv-style 64-bit widening multiply from the Win32 headers.
+inline long long Int32x32To64(int a, int b) { return (long long)a * (long long)b; }
+
+//////////////////////////////////////////////////////////////////////////
+// Missing Linux-layer text helpers
+//
+// Same story as fopen_nocase and comparePathNames: called under
+// #if defined(LINUX), defined nowhere. Each one's contract is pinned down by
+// the #else branch sitting right next to the call.
+//////////////////////////////////////////////////////////////////////////
+
+// CrySystem/XML/xml.cpp:45-51 --
+//     #if defined(LINUX) return compareTextFileStrings(m_tag, tag) == 0;
+//     #else               return stricmp(tag, m_tag) == 0;
+// so this is exactly a case-insensitive compare.
+inline int compareTextFileStrings(const char* a, const char* b)
+{
+	return strcasecmp(a ? a : "", b ? b : "");
+}
+
+// Strips carriage returns and line feeds from XML text nodes in place.
+inline void RemoveCRLF(string& str)
+{
+	std::string in(str.c_str());
+	std::string out;
+	out.reserve(in.size());
+	for (size_t i = 0; i < in.size(); ++i)
+		if (in[i] != '\r' && in[i] != '\n')
+			out += in[i];
+	str = out.c_str();
+}
+
+// CryPak.cpp:618 documents the invariant it is maintaining: "the path must be
+// absolute normalized lower-case with forward-slashes". This collapses runs of
+// separators produced by concatenating path fragments. It rewrites in place and
+// only ever shortens, so the caller's buffer is always adequate.
+inline void replaceDoublePathFilename(char* szPath)
+{
+	if (!szPath) return;
+	char* w = szPath;
+	for (char* r = szPath; *r; ++r)
+	{
+		char c = (*r == '\\') ? '/' : *r;
+		if (c == '/' && w > szPath && w[-1] == '/')
+			continue;
+		*w++ = c;
+	}
+	*w = '\0';
+}
+
+// The Windows build reads its version out of the PE resource (CrySystem.rc,
+// VS_VERSION_INFO). There is no resource section on Linux or in wasm, so the
+// LINUX branch of CSystem::QueryVersionInfo() reads this constant instead.
+// SFileVersion is int v[4]; the branch sets v[1..3] to 1 and takes v[0] from
+// here, so this is the engine build number: CryEngine 1.33.
+#ifndef VERSION_INFO
+#	define VERSION_INFO 133
+#endif
+
+//////////////////////////////////////////////////////////////////////////
+// Path adaptation helpers
+//
+// CryPak.cpp calls adaptFilenameToLinux() and getFilenameNoCase() inside its
+// #if defined(LINUX) branch; like fopen_nocase and comparePathNames, neither
+// exists anywhere in the released tree. Their contracts are legible from the
+// one call site (CryPak.cpp:255-265):
+//
+//     string adjusted(dst);
+//     adaptFilenameToLinux(adjusted);            // in place
+//     string fileName(adjusted);
+//     if (getFilenameNoCase(dst, fileName))
+//         strcpy(dst, fileName.c_str());         // exists: take the REAL case
+//     else
+//         strcpy(dst, adjusted.c_str());         // absent: keep the adapted name
+//
+// So adaptFilenameToLinux rewrites a Win32 path into a POSIX one in place, and
+// getFilenameNoCase resolves a path case-insensitively, reporting whether it
+// exists and handing back the actual on-disk spelling.
+//////////////////////////////////////////////////////////////////////////
+inline void adaptFilenameToLinux(string& rAdjustedFilename)
+{
+	std::string p(rAdjustedFilename.c_str());
+
+	// Drive letters have no meaning here: "C:\game\x" -> "/game/x".
+	if (p.size() >= 2 && p[1] == ':' && isalpha((unsigned char)p[0]))
+		p.erase(0, 2);
+
+	for (size_t i = 0; i < p.size(); ++i)
+		if (p[i] == '\\') p[i] = '/';
+
+	// Collapse any duplicated separators produced by the substitution.
+	std::string out;
+	out.reserve(p.size());
+	for (size_t i = 0; i < p.size(); ++i)
+	{
+		if (p[i] == '/' && !out.empty() && out[out.size() - 1] == '/')
+			continue;
+		out += p[i];
+	}
+	rAdjustedFilename = out.c_str();
+}
+
+inline bool getFilenameNoCase(const char* szFile, string& rFilenameOut)
+{
+	if (!szFile) return false;
+
+	std::string resolved;
+	if (!cry_resolve_nocase(szFile, resolved))
+		return false;
+
+	rFilenameOut = resolved.c_str();
+	return true;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// _fullpath / GetFileAttributes
+//
+// _fullpath is the MSVC CRT's absolute-path builder. realpath() is NOT a drop
+// in replacement: realpath fails when the path does not exist, whereas
+// _fullpath is purely lexical and happily normalises a path to a file that has
+// yet to be created -- which is exactly how CryPak uses it. So the
+// normalisation is done by hand.
+//////////////////////////////////////////////////////////////////////////
+inline char* _fullpath(char* absPath, const char* relPath, size_t maxLength)
+{
+	if (!absPath || !relPath) return NULL;
+
+	std::string p(relPath);
+	for (size_t i = 0; i < p.size(); ++i)
+		if (p[i] == '\\') p[i] = '/';
+
+	if (p.empty() || p[0] != '/')
+	{
+		char cwd[4096];
+		if (!getcwd(cwd, sizeof(cwd))) return NULL;
+		std::string base(cwd);
+		if (!base.empty() && base[base.size() - 1] != '/') base += '/';
+		p = base + p;
+	}
+
+	// Resolve "." and ".." lexically, without touching the filesystem.
+	std::vector<std::string> parts;
+	size_t i = 1;
+	while (i <= p.size())
+	{
+		size_t slash = p.find('/', i);
+		if (slash == std::string::npos) slash = p.size();
+		std::string comp = p.substr(i, slash - i);
+		i = slash + 1;
+		if (comp.empty() || comp == ".") continue;
+		if (comp == "..") { if (!parts.empty()) parts.pop_back(); continue; }
+		parts.push_back(comp);
+	}
+
+	std::string out;
+	for (size_t k = 0; k < parts.size(); ++k) { out += '/'; out += parts[k]; }
+	if (out.empty()) out = "/";
+
+	if (out.size() + 1 > maxLength) return NULL;
+	strcpy(absPath, out.c_str());
+	return absPath;
+}
+
+inline DWORD GetFileAttributes(const char* lpFileName)
+{
+	struct stat st;
+	if (!lpFileName || stat(lpFileName, &st) != 0)
+	{
+		// Fall back to a case-insensitive lookup: callers use this to test for
+		// the existence of asset paths, which carry Windows casing.
+		std::string resolved;
+		if (!cry_resolve_nocase(lpFileName ? lpFileName : "", resolved) ||
+		    stat(resolved.c_str(), &st) != 0)
+			return INVALID_FILE_ATTRIBUTES;
+	}
+	DWORD attr = 0;
+	if (S_ISDIR(st.st_mode))        attr |= FILE_ATTRIBUTE_DIRECTORY;
+	if (!(st.st_mode & S_IWUSR))    attr |= FILE_ATTRIBUTE_READONLY;
+	if (attr == 0)                  attr  = FILE_ATTRIBUTE_NORMAL;
+	return attr;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Working directory
+//
+// Win32 semantics: returns the number of characters written, NOT counting the
+// terminating NUL, and 0 on failure. getcwd() instead returns the buffer, so
+// the return value has to be translated or CryPak's "if (GetCurrentDirectory(
+// ... ))" test would read backwards.
+//////////////////////////////////////////////////////////////////////////
+inline DWORD GetCurrentDirectory(DWORD nBufferLength, char* lpBuffer)
+{
+	if (!lpBuffer || nBufferLength == 0) return 0;
+	if (!getcwd(lpBuffer, (size_t)nBufferLength)) return 0;
+	return (DWORD)strlen(lpBuffer);
 }
 
 //////////////////////////////////////////////////////////////////////////

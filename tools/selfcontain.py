@@ -26,7 +26,8 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFINES = ["LINUX", "LINUX64", "_LINUX", "NOT_USE_BINK_SDK", "NOT_USE_DIVX_SDK",
-           "NOT_USE_PUNKBUSTER_SDK", "EXCLUDE_UBICOM_CLIENT_SDK", "_CRY_WEBPORT"]
+           "NOT_USE_PUNKBUSTER_SDK", "EXCLUDE_UBICOM_CLIENT_SDK", "_CRY_WEBPORT",
+           "_LARGEFILE64_SOURCE", "_FILE_OFFSET_BITS=64"]
 
 # Ordered by how often they turn out to be the missing dependency. Cheap ones
 # and common bases first, so the search usually terminates on the first try.
@@ -79,6 +80,21 @@ def insert_includes(path, incs):
     return s[:idx] + block + s[idx:]
 
 
+def dependents_of(header, moddir):
+    """Headers in the module that include `header` directly."""
+    out = []
+    pat = re.compile(r'#\s*include\s*[<"]%s[>"]' % re.escape(header), re.I)
+    for fn in os.listdir(moddir):
+        if not fn.endswith(".h") or fn == header:
+            continue
+        try:
+            if pat.search(open(os.path.join(moddir, fn), errors="surrogateescape").read()):
+                out.append(fn)
+        except OSError:
+            pass
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--module", default="CryCommon")
@@ -89,6 +105,14 @@ def main():
     incdir = os.path.join(ROOT, "CryCommon")
     moddir = os.path.join(ROOT, args.module)
     headers = sorted(h for h in os.listdir(moddir) if h.endswith(".h"))
+
+    # Headers that compile cleanly right now. A fix that breaks any of these is
+    # a net loss and gets reverted, however good it looks for its own file.
+    known_good = set()
+    for h in headers:
+        if errors(h, incdir) == 0:
+            known_good.add(h)
+    print("%d/%d headers already self-contained\n" % (len(known_good), len(headers)))
 
     fixed, unresolved = [], []
     for h in headers:
@@ -115,11 +139,29 @@ def main():
                 p = os.path.join(moddir, h)
                 new = insert_includes(p, solution)
                 open(p, "w").write(new)
-                # Verify in place; revert if the real file disagrees with the probe.
+
+                bad = None
+                # Verify in place; the probe TU and the real file can differ.
                 if errors(h, incdir) != 0:
-                    print("       ! reverted: in-place result differs")
+                    bad = "in-place result differs from the probe"
+                else:
+                    # Verify the header's DEPENDENTS too. Adding a high-level
+                    # include to a low-level header can create a cycle that
+                    # breaks everything downstream while the header itself
+                    # still compiles -- adding IRenderer.h to ILog.h did
+                    # exactly that, silently breaking Tarray.h and
+                    # Cry_XOptimise.h. Checking only the edited file misses it.
+                    for dep in dependents_of(h, moddir):
+                        if dep in known_good and errors(dep, incdir) != 0:
+                            bad = "regressed %s, which includes it" % dep
+                            break
+
+                if bad:
+                    print("       ! reverted: %s" % bad)
                     subprocess.run(["git", "checkout", "--", p], cwd=ROOT)
                     fixed.pop()
+                else:
+                    known_good.add(h)
         else:
             unresolved.append((h, base))
 

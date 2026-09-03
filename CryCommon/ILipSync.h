@@ -2,6 +2,16 @@
 #ifndef ILIPSYNC_H
 #define ILIPSYNC_H
 
+
+
+// [webport] Not self-contained: names IScriptObject but included nothing,
+// relying on the .vcproj compile order. Added its real dependency.
+#include "IScriptSystem.h"
+
+// [webport] Not self-contained: names ISystem but included nothing,
+// relying on the .vcproj compile order. Added its real dependency.
+#include "ISystem.h"
+
 struct CryCharMorphParams;
 
 // callback interfaces

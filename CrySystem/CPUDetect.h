@@ -120,10 +120,22 @@ public:
 #if defined(WIN64) || defined(LINUX64)
 inline bool IsAMD64()
 {
-#ifdef _AMD64_
+	// [webport] The original demanded _AMD64_ -- a macro the Win64 SDK
+	// defines -- and #error'd otherwise. Nothing defines it on the LINUX64
+	// seam, so this header could not be compiled at all (13 TUs).
+	//
+	// It also cannot simply return true. The web port compiles with the
+	// LINUX64 defines because that is the seam the engine provides, but the
+	// actual target is wasm32: 32-bit, and emphatically not x86-64. Answering
+	// "yes, AMD64" there would be a lie that selects x86 code paths.
+	//
+	// Ask the compiler instead of the SDK.
+#if defined(CRY_WASM)
+	return false;                       // wasm32 is neither AMD64 nor x86
+#elif defined(_AMD64_) || defined(__x86_64__) || defined(_M_X64)
 	return true;
 #else
-#error not supported here
+	return false;
 #endif
 }
 #else

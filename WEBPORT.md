@@ -3,20 +3,34 @@
 Porting the Far Cry engine to run in a browser (WebAssembly + WebGL2).
 
 This document covers **Milestone 1: get the engine through a non-MSVC
-toolchain.** Nothing here renders a frame yet; this is the foundation work that
-everything else is blocked behind.
+toolchain** — now complete for CryCommon and CrySystem. Nothing here renders a
+frame yet; this is the foundation work everything else is blocked behind.
 
 ---
 
 ## Current state
 
 ```
-CryCommon headers      66/130   50.8%
-CrySystem sources      14/58    24.1%
-TOTAL                  80/188
+CryCommon headers     125/125   100.0%
+CrySystem sources      45/45    100.0%
+TOTAL                 170/170
 ```
 
-Starting point was **1/188**. The build is green: `libCrySystem.a` links.
+Starting point was **1/188**. Both modules compile completely, the build is
+green, and `libCrySystem.a` links.
+
+19 further translation units are **excluded by design** — Win32-only code that
+is not a port target (the commctrl Lua debugger, `SystemWin32.cpp`, dbghelp
+stack walking, the MAPI mailer, the Win32/Xbox platform headers, and the
+overlapped-I/O streaming files). Each is listed with a reason:
+
+```bash
+tools/triage.py --excluded
+```
+
+Counting them as failures would make the score permanently unreachable and hide
+real progress, so they are held out of the denominator rather than pretended
+away.
 
 | Pass | Fix | Total |
 |---|---|---|
@@ -24,8 +38,12 @@ Starting point was **1/188**. The build is green: `libCrySystem.a` links.
 | 1 | `WinBase.h` shim + `stdafx.h` case | 40/188 |
 | 2 | math template cluster ordering | 54/188 |
 | 3 | `Cry_Geo.h` shadowing bug, `fopen_nocase` | 59/188 |
-| 4 | `GetPlane` / `GetTransposed44` friend visibility, `Snap_s180` | 72/188 |
+| 4 | friend visibility, `Snap_s180` | 72/188 |
 | 5 | `XDOM` forward decl, self-contained headers | 80/188 |
+| 6 | include case/separators, `PHYSICS_EXPORTS` | 92/189 |
+| 7 | 31 headers made self-contained | 134/174 |
+| 8 | path helpers, CRT shims, find API | 154/171 |
+| 9 | render header cycle, `XmlParser` iterators | **170/170** |
 
 ---
 
@@ -66,6 +84,9 @@ cmake/CryPlatform.cmake         platform defines, warning policy
 cmake/CryModule.cmake           cry_add_module(), cry_add_header_gate()
 cmake/toolchains/Emscripten.cmake   wasm settings
 tools/triage.py                 the compile census
+tools/fix_includes.py           repairs Win32-only include spellings
+tools/selfcontain.py            finds each header's missing dependency
+tests/test_winbase.cpp          regression tests for the reconstructed shims
 CryCommon/WinBase.h             NEW — the missing Win32 shim
 CryCommon/Cry_MathFwd.h         NEW — math cluster forward declarations
 ```
@@ -198,47 +219,110 @@ uninitialised. It survived twenty years because `OBB_tpl` is a class template
 and this member was never instantiated, so the body was never type-checked.
 Fixed to `this->m33 = m33`, matching `CreateOBB()` immediately below.
 
-### 7. Case-sensitivity and non-self-contained headers
+### 7. Case-sensitivity and Windows-only include spellings
 
-47 sources spelled `#include "stdafx.h"`; the file is `StdAfx.h`. Fine on
-Windows, fatal on Linux.
+47 sources spelled `#include "stdafx.h"`; the file is `StdAfx.h`. A further 34
+includes used backslash separators (`"XML\\Xml.h"`, `"expat\\expat.h"`) or the
+wrong case (`<CrySound.h>` for `crysound.h`, `<winbase.h>` for `WinBase.h`).
+All are invisible on NTFS and fatal on ext4 — and in Emscripten's filesystems.
 
-Several headers (`ColorDefs.h`, `IBindable.h`, `AnimKey.h`,
-`CryEngineDecalInfo.h`) named engine math types while including *nothing*,
-relying on always being compiled after `Cry_Math.h` in the `.vcproj`'s fixed
-order. Each was given its actual dependency, verified individually.
+`tools/fix_includes.py` resolves every include against the real files on disk
+and corrects it, preserving directory structure and `..` components.
 
-Also `struct XDOM::IXMLDOMDocument;` (40 TUs) — a qualified name cannot be
-forward-declared; it has to be declared inside its namespace.
+### 8. Headers that were never self-contained
 
----
+Around 40 headers named types while including nothing, relying on the
+`.vcproj`'s fixed compile order. `tools/selfcontain.py` finds each one's real
+dependency by trying candidates and keeping only what compiles clean.
+
+It verifies twice, which turned out to matter. Adding `IRenderer.h` to
+`ILog.h` made *that* header compile — and silently broke `Tarray.h` and
+`Cry_XOptimise.h`, which include it. The tool now re-checks a header's
+dependents after every edit and reverts anything that is a net loss.
+
+### 9. `PHYSICS_EXPORTS` was defined platform-wide
+
+`LinuxSpecific.h` defined it unconditionally. It means "I am building
+CryPhysics": it selects `dllexport` over `dllimport`, and it makes `Cry_Math.h`
+skip its no-op `VALIDATOR_*` stubs on the assumption that
+`CryPhysics/utils.h` will supply the real ones.
+
+Defining it for every module meant every translation unit claimed to be
+CryPhysics, so the stubs never existed and `physinterface.h` — which uses
+`VALIDATORS_START` in six struct bodies — failed to compile in anything that
+included it. The `dllexport` half was harmless on Linux, which is why it went
+unnoticed.
+
+### 10. The render header cycle
+
+`IShader.h`, `IRenderer.h`, `VertexFormats.h` and `RendElement.h` form a cycle,
+and `LeafBuffer.h` needs a *complete* `SMRendTexVert` (it takes its `sizeof`).
+Two changes broke it:
+
+- `IRenderer.h` uses `struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F` by pointer only,
+  so a forward declaration replaces the include.
+- `RendElement.h` declared `SMRendTexVert` and `SVertBufComps` *after* its
+  `ColorDefs.h` include, which transitively pulls the whole renderer. Both
+  structs depend on nothing (two floats and four bools), so hoisting them above
+  that include was the minimal fix.
+
+### 11. More latent bugs
+
+| Bug | Effect |
+|---|---|
+| `CCryFile::SeekToEnd` declared `size_t`, no `return` | callers read an indeterminate value |
+| `class string: public string` (`StlDbgAlloc.h`) | class was its own base; every constructor delegated to itself. Sibling wrappers all say `std::` — the qualifier was simply dropped |
+| `operator=(...) : std::allocator<T>(rThat)` | base-initializer on an assignment operator, copy-pasted from the constructor above |
+| `&pe_status_nparts()` (2 sites) | taking the address of a temporary |
+| `IsAMD64()` `#error not supported here` | the `LINUX64` branch demanded a Win64 SDK macro. It also cannot just return true — the real target is wasm32, which is not AMD64 |
+| `EF_Query()` result cast to `int` | returns `void*` carrying a small integer; truncating on 64-bit |
+
+`XmlParser.h` deserves its own note: it declared 17 variables as
+`string::iterator` while assigning `char*` to them. MSVC 7.1's
+`std::string::iterator` *was* a `char*` typedef, so it compiled; libstdc++
+makes it a class. They are now `char*`, which is what they always were — the
+sibling accessors `getBufferPos()` and `getLastBufferPos()` already returned
+`char*` for the same values.
 
 ## What's next
 
-### Milestone 1 remainder — 108 TUs left
-
-Run `tools/triage.py` for the live list. The largest remaining groups are
-render-element headers (`CREOcLeaf`, `CRESky`, `CRETerrainSector`,
-`RendElement`) that need `RendElement.h` visible, and `AABBSV.h` / `primitives.h`
-with more lookup-order issues. Expect the same pattern — a few root causes, not
-a hundred.
-
-One find worth flagging: `CryHeaders.h:387` casts a pointer to `int`, losing
-bits on any 64-bit build. Harmless on wasm32, where pointers are 32-bit, but it
-is a genuine latent bug.
+Milestone 1 is complete: CryCommon and CrySystem compile in full under clang
+with the LINUX seam, and the build is green.
 
 ### Milestone 2 — platform layer
 
-Replace, don't shim: Win32 threading, file I/O and timers; strip or
-intrinsic-ify the 21 files containing inline x86 `__asm` (illegal in wasm);
-`<ext/hash_map>` → `unordered_map`. The excluded CrySystem files are listed in
-`CrySystem/CMakeLists.txt` with the reason for each.
+The shims in `WinBase.h` are honest about what they are. Three things still
+need *replacing* rather than shimming:
+
+- **Overlapped I/O.** `RefStreamEngine.cpp`, `RefReadStream.cpp` and
+  `RefReadStreamProxy.cpp` use `CreateEvent` + `ReadFileEx` +
+  `GetOverlappedResult` + alertable `SleepEx` waits. There is no honest shim —
+  it is an async-I/O redesign, and on the web it becomes a worker thread or a
+  fetch pipeline. They are excluded, not stubbed, precisely so this stays
+  visible.
+- **Inline x86 assembly.** 21 files contain `__asm`, which is illegal in wasm.
+- **`<ext/hash_map>`** → `unordered_map` (currently silenced with
+  `-Wno-deprecated`).
+
+Two warning classes in the current build are worth attention before they
+become runtime mysteries:
+
+| Warning | Count | Why it matters |
+|---|---|---|
+| `-Wdynamic-class-memaccess` | 96 | `memcpy`/`memset` over classes with vtables. It happened to work with MSVC's layout; it is undefined behaviour and a plausible source of wasm-only crashes. |
+| `-Wswitch` | 99 | Unhandled enum cases — mostly benign, but worth auditing once. |
+
+Also outstanding: `BONE_PHYSICS_COMP::nPhysGeom` is an `int` that carries a
+`phys_geometry*` (`CryHeaders.h`). It is sound on wasm32, where pointers are
+32-bit, and lossy anywhere else. The real fix widens the field, but the struct
+is serialised in `.cgf` assets, so it is a file-format change that belongs with
+the asset pipeline.
 
 ### Milestone 3 — headless build
 
 Stub renderer/sound/video behind interfaces and target a NULL-render build. A
-dedicated server in wasm is a genuinely reachable target and proves out
-everything except the renderer.
+dedicated server in wasm is genuinely reachable and proves out everything
+except the renderer.
 
 The engine's `while (!quit)` main loop cannot work on the browser's event loop.
 Asyncify is enabled as the short-term answer; restructuring around
@@ -251,6 +335,18 @@ references to `GL_NV_register_combiners`, WGL context creation, and NVIDIA Cg
 shaders whose `cgGL.lib` is **a binary blob with no source**. WebGL2 supports
 none of it. Every shader and the whole fixed-function/combiner pipeline needs
 rewriting to GLSL ES.
+
+### Remaining modules
+
+The same tooling applies to the twelve modules still unported. Expect the same
+distribution of causes — the tools exist now precisely because these problems
+recur at scale:
+
+```bash
+tools/fix_includes.py Cry3DEngine        # Win32 include spellings
+tools/selfcontain.py --module Cry3DEngine --apply
+tools/triage.py --module Cry3DEngine
+```
 
 ### Known hard blockers
 

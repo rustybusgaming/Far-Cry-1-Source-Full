@@ -19,6 +19,7 @@ target_compile_definitions(CryCommon INTERFACE ${CRY_COMMON_DEFINES})
 
 if(CRY_HEADER_PARSE_GATE)
     set(CRYCOMMON_GATED_HEADERS
+    AABBSV.h
     AgentParams.h
     AnimKey.h
     CRE2DQuad.h
@@ -65,6 +66,8 @@ if(CRY_HEADER_PARSE_GATE)
     EntityDesc.h
     Font.h
     FrameProfiler.h
+    I3DEngine.h
+    I3DIndoorEngine.h
     IAISystem.h
     IAgent.h
     IBindable.h
@@ -81,6 +84,7 @@ if(CRY_HEADER_PARSE_GATE)
     IGame.h
     IInput.h
     ILMSerializationManager.h
+    ILipSync.h
     ILog.h
     IMarkers.h
     IMiniLog.h
@@ -111,11 +115,14 @@ if(CRY_HEADER_PARSE_GATE)
     Names.h
     ProjectDefines.h
     Range.h
+    RendElement.h
     ScriptObjectVector.h
     SerializeBuffer.h
     Splash.h
+    StlDbgAlloc.h
     StlUtils.h
     Stream.h
+    StreamData.h
     StringUtils.h
     TAlloc.h
     TArrays.h
@@ -125,6 +132,7 @@ if(CRY_HEADER_PARSE_GATE)
     VertexBufferSource.h
     VertexFormats.h
     WinBase.h
+    XmlParser.h
     XmlParserFont.h
     XmlStream.h
     _ScriptableEx.h
@@ -132,6 +140,7 @@ if(CRY_HEADER_PARSE_GATE)
     crysound64.h
     list2.h
     matrixnm.h
+    physinterface.h
     platform.h
     primitives.h
     smartptr.h

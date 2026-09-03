@@ -215,6 +215,13 @@ typedef std::wstring wstring;
 ///////////////////////////////////////////////////////////////////////////////
 typedef double real;
 typedef int index_t;
+// [webport] uchar was declared only in IRenderer.h, so ColorDefs.h -- which
+// needs nothing else from the renderer -- had to include the entire renderer
+// interface to get it. That inverted the dependency direction and put
+// IRenderer.h ahead of RendElement.h's own struct definitions, breaking the
+// header cycle. It is a scalar alias and belongs here with real and index_t;
+// IRenderer.h's identical typedef remains valid and harmless.
+typedef unsigned char uchar;
 typedef int                 INT;
 typedef unsigned int        UINT;
 typedef unsigned int        *PUINT;

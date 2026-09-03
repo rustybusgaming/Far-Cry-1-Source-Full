@@ -20,25 +20,53 @@
 cry_add_module(CrySystem
     SOURCES
     ApplicationHelper.cpp
+    CPUDetect.cpp
+    CompressedFile.cpp
+    CryMemoryManager.cpp
+    CryPak.cpp
     CrySizerImpl.cpp
     CrySizerStats.cpp
     DataProbe.cpp
     DebugCallStack.cpp
+    DllMain.cpp
+    DownloadManager.cpp
     FrameProfileRender.cpp
     FrameProfileSystem.cpp
+    Log.cpp
     MTSafeAllocator.cpp
     Mailer.cpp
     RandGen.cpp
+    ScriptBinding.cpp
+    ScriptObjectAnimation.cpp
+    ScriptObjectEntity.cpp
     ScriptObjectMovie.cpp
+    ScriptObjectParticle.cpp
     ScriptObjectScript.cpp
+    ScriptObjectSound.cpp
+    ScriptObjectSystem.cpp
+    ScriptSink.cpp
     SourceSafeHelper.cpp
     StdAfx.cpp
     StreamEngine.cpp
+    System.cpp
+    SystemCFG.cpp
+    SystemInit.cpp
+    SystemRender.cpp
+    Timer.cpp
+    XConsole.cpp
+    XConsoleVariable.cpp
+    XML/XMLDOMDocumentImpl.cpp
+    XML/XMLDOMNodeImpl.cpp
+    XML/XMLDOMNodeListImpl.cpp
     XML/_XMLDOMParserImpl.cpp
+    XML/xml.cpp
     ZipDirCache.cpp
+    ZipDirCacheFactory.cpp
+    ZipDirCacheRW.cpp
     ZipDirFind.cpp
     ZipDirFindRW.cpp
     ZipDirList.cpp
+    ZipDirStructures.cpp
     ZipDirTree.cpp
     getdxver.cpp
     INCLUDES

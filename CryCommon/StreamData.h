@@ -1,3 +1,7 @@
+// [webport] Not self-contained: names CStream but included nothing,
+// relying on the .vcproj compile order. Added its real dependency.
+#include "Stream.h"
+
 #pragma once
 
 #include "ISystem.h"						// ISystem

@@ -9,6 +9,10 @@
 //	-Feb 15,2004:Created by Michael Glueck, code provided by Ivo Herzeg
 //
 //////////////////////////////////////////////////////////////////////
+// [webport] BoxSides (extern char BoxSides[0x40*8]) is declared in
+// Cry_Camera.h; this header used it without including anything.
+#include "Cry_Camera.h"
+
 
 #ifndef AABBSV_H
 #define AABBSV_H

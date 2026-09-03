@@ -443,6 +443,7 @@ ILINE  Vec3_tpl<F> GetOrthogonal( const Vec3_tpl<F>& v ) {
 // a fundamental type with no associated namespace. MSVC 7.1 deferred the
 // lookup to instantiation and found it. Declaring it up front fixes the order.
 ILINE f32 Snap_s180( f32 val );
+ILINE f32 Snap_s360( f32 val );
 
 // struct Ang3_tpl
 ///////////////////////////////////////////////////////////////////////////////

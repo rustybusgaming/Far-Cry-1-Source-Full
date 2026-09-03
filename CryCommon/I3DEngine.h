@@ -12,6 +12,11 @@
 //  History:
 //
 ////////////////////////////////////////////////////////////////////////////
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "VertexFormats.h"
+
 
 #ifndef CRY3DENGINEINTERFACE_H
 #define CRY3DENGINEINTERFACE_H
@@ -74,7 +79,9 @@ private:
 };
 
 // Specialation for vectors.
-inline Vec3 SVariationValue<Vec3>::GetVariantValue() const
+// [webport] Explicit specialization of a class-template member requires the
+// "template<>" introducer; MSVC 7.1 accepted the bare form.
+template<> inline Vec3 SVariationValue<Vec3>::GetVariantValue() const
 {
 	Vec3 v;
 	v.x = value.x*(1 + variation*GenRand());

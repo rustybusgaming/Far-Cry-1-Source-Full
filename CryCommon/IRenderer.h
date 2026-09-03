@@ -735,6 +735,10 @@ struct IRenderer//: public IRendererCallbackServer
 
   virtual void *GetDynVBPtr(int nVerts, int &nOffs, int Pool) = 0;
   virtual void DrawDynVB(int nOffs, int Pool, int nVerts) = 0;
+  // [webport] Used by pointer only, so a declaration is enough and avoids
+  // pulling VertexFormats.h -- which includes IShader.h, which comes back
+  // here. Declaring it breaks that cycle without changing the interface.
+  struct struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F;
   virtual void DrawDynVB(struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F *pBuf, ushort *pInds, int nVerts, int nInds, int nPrimType) = 0;
 
 	//! append fence to the end of rendering stream

@@ -10,9 +10,9 @@
 #include <ILog.h>
 #include <ISound.h>
 #ifdef WIN64
-#include <CrySound64.h>
+#include <crysound64.h>
 #else
-#include <CrySound.h>
+#include <crysound.h>
 #endif
  
 //////////////////////////////////////////////////////////////////////

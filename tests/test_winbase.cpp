@@ -155,10 +155,262 @@ static void test_interlocked()
 	check(v == 7, "CompareExchange left the value alone on mismatch");
 }
 
+//////////////////////////////////////////////////////////////////////////
+// Path adaptation -- the helpers CryPak.cpp needs on the LINUX seam.
+//////////////////////////////////////////////////////////////////////////
+static void test_adaptFilenameToLinux()
+{
+	printf("adaptFilenameToLinux:\n");
+
+	string a("Game\\Levels\\Pier.pak");
+	adaptFilenameToLinux(a);
+	check(strcmp(a.c_str(), "Game/Levels/Pier.pak") == 0,
+	      "backslashes become forward slashes");
+
+	string b("C:\\FarCry\\Game\\x.pak");
+	adaptFilenameToLinux(b);
+	check(strcmp(b.c_str(), "/FarCry/Game/x.pak") == 0,
+	      "drive letter is stripped");
+
+	string c("Game\\\\Levels//Pier.pak");
+	adaptFilenameToLinux(c);
+	check(strcmp(c.c_str(), "Game/Levels/Pier.pak") == 0,
+	      "duplicate separators collapse");
+
+	string d("already/posix/path.pak");
+	adaptFilenameToLinux(d);
+	check(strcmp(d.c_str(), "already/posix/path.pak") == 0,
+	      "a POSIX path is left unchanged");
+}
+
+static void test_fullpath()
+{
+	printf("_fullpath:\n");
+	char buf[4096];
+
+	check(_fullpath(buf, "/a/b/../c/./d", sizeof(buf)) != NULL &&
+	      strcmp(buf, "/a/c/d") == 0, "resolves . and .. lexically");
+
+	check(_fullpath(buf, "/a/b\\c", sizeof(buf)) != NULL &&
+	      strcmp(buf, "/a/b/c") == 0, "accepts Win32 separators");
+
+	// Unlike realpath(), _fullpath must work on a path that does not exist.
+	check(_fullpath(buf, "/no/such/file/anywhere.dat", sizeof(buf)) != NULL &&
+	      strcmp(buf, "/no/such/file/anywhere.dat") == 0,
+	      "does not require the path to exist");
+
+	check(_fullpath(buf, "relative/path", sizeof(buf)) != NULL &&
+	      buf[0] == '/', "a relative path is made absolute");
+
+	check(_fullpath(buf, "/a/b", 3) == NULL, "refuses to overflow the buffer");
+}
+
+static void test_file_attributes()
+{
+	printf("GetFileAttributes / getFilenameNoCase:\n");
+
+	mkdir("gatest", 0755);
+	write_file("gatest/Thing.dat", "SKYDATA");
+
+	DWORD d = GetFileAttributes("gatest");
+	check(d != INVALID_FILE_ATTRIBUTES && (d & FILE_ATTRIBUTE_DIRECTORY),
+	      "directory reports FILE_ATTRIBUTE_DIRECTORY");
+
+	DWORD f = GetFileAttributes("gatest/Thing.dat");
+	check(f != INVALID_FILE_ATTRIBUTES && !(f & FILE_ATTRIBUTE_DIRECTORY),
+	      "regular file does not report DIRECTORY");
+
+	check(GetFileAttributes("gatest/THING.DAT") != INVALID_FILE_ATTRIBUTES,
+	      "resolves through a case mismatch");
+
+	check(GetFileAttributes("gatest/absent.dat") == INVALID_FILE_ATTRIBUTES,
+	      "absent file reports INVALID_FILE_ATTRIBUTES");
+
+	string out;
+	check(getFilenameNoCase("gatest/THING.DAT", out),
+	      "getFilenameNoCase finds a mis-cased file");
+	check(strcmp(out.c_str(), "gatest/Thing.dat") == 0,
+	      "and reports the real on-disk spelling");
+
+	string out2;
+	check(!getFilenameNoCase("gatest/nope.dat", out2),
+	      "getFilenameNoCase fails on an absent file");
+
+	remove("gatest/Thing.dat");
+	rmdir("gatest");
+}
+
+//////////////////////////////////////////////////////////////////////////
+// CRT shims and the remaining Linux-layer text helpers.
+//////////////////////////////////////////////////////////////////////////
+static void test_crt_shims()
+{
+	printf("CRT shims:\n");
+
+	char b1[32]; strcpy(b1, "MiXeD Case");
+	check(strcmp(strlwr(b1), "mixed case") == 0, "strlwr lowercases in place");
+	strcpy(b1, "MiXeD Case");
+	check(strcmp(strupr(b1), "MIXED CASE") == 0, "strupr uppercases in place");
+
+	check(memicmp("Hello", "hELLO", 5) == 0,   "memicmp ignores case");
+	check(memicmp("Hella", "hELLO", 5) != 0,   "memicmp still detects a difference");
+
+	char n[36];
+	check(strcmp(itoa(12345, n, 10), "12345") == 0,   "itoa base 10");
+	check(strcmp(itoa(-42, n, 10), "-42") == 0,       "itoa negative");
+	check(strcmp(itoa(0, n, 10), "0") == 0,           "itoa zero");
+	check(strcmp(itoa(255, n, 16), "ff") == 0,        "itoa base 16");
+	check(strcmp(itoa(5, n, 2), "101") == 0,          "itoa base 2");
+
+	check(Int32x32To64(100000, 100000) == 10000000000LL,
+	      "Int32x32To64 does not overflow through 32 bits");
+}
+
+static void test_text_helpers()
+{
+	printf("Linux-layer text helpers:\n");
+
+	// Matches the #else branch it replaces: stricmp(...) == 0
+	check(compareTextFileStrings("Entity", "entity") == 0, "tag compare ignores case");
+	check(compareTextFileStrings("Entity", "Entry")  != 0, "different tags differ");
+
+	string t("line one\r\nline two\n");
+	RemoveCRLF(t);
+	check(strcmp(t.c_str(), "line oneline two") == 0, "RemoveCRLF strips CR and LF");
+
+	char p1[64]; strcpy(p1, "game//levels///pier.pak");
+	replaceDoublePathFilename(p1);
+	check(strcmp(p1, "game/levels/pier.pak") == 0, "collapses repeated separators");
+
+	char p2[64]; strcpy(p2, "game\\\\levels\\pier.pak");
+	replaceDoublePathFilename(p2);
+	check(strcmp(p2, "game/levels/pier.pak") == 0, "normalises backslashes too");
+
+	char p3[64]; strcpy(p3, "already/clean/path.pak");
+	replaceDoublePathFilename(p3);
+	check(strcmp(p3, "already/clean/path.pak") == 0, "leaves a clean path alone");
+}
+
+//////////////////////////////////////////////////////////////////////////
+// _findfirst64 / _findnext64 / _findclose
+//
+// The most intricate shim in the header: it has to reproduce Win32 wildcard
+// semantics, not POSIX ones. CryPak mounts every pak it finds through this,
+// so a mistake here means the engine silently mounts nothing.
+//////////////////////////////////////////////////////////////////////////
+static int count_matches(const char* spec, unsigned* lastAttrib = NULL)
+{
+	__finddata64_t fd;
+	intptr_t h = _findfirst64(spec, &fd);
+	if (h == -1) return 0;
+	int n = 0;
+	do {
+		++n;
+		if (lastAttrib) *lastAttrib = fd.attrib;
+	} while (_findnext64(h, &fd) == 0);
+	_findclose(h);
+	return n;
+}
+
+static void test_find_api()
+{
+	printf("_findfirst64 / _findnext64:\n");
+
+	mkdir("findtest", 0755);
+	mkdir("findtest/SubDir", 0755);
+	write_file("findtest/Levels.pak", "SKYDATA");
+	write_file("findtest/Objects.PAK", "SKYDATA");
+	write_file("findtest/readme.txt", "SKYDATA");
+
+	// Win32 wildcard matching is case-insensitive: "*.pak" must find the
+	// file named "Objects.PAK" as well.
+	check(count_matches("findtest/*.pak") == 2,
+	      "*.pak matches both .pak and .PAK (case-insensitive)");
+
+	check(count_matches("findtest/*.txt") == 1, "*.txt matches one file");
+	check(count_matches("findtest/*.dds") == 0, "no match returns nothing");
+	check(_findfirst64("findtest/*.dds", (__finddata64_t*)NULL) == -1,
+	      "null finddata is rejected");
+
+	// A directory that does not exist must fail rather than crash.
+	__finddata64_t fd;
+	check(_findfirst64("no_such_dir/*.pak", &fd) == -1,
+	      "absent directory returns -1");
+
+	// Directories report _A_SUBDIR.
+	unsigned attrib = 0;
+	check(count_matches("findtest/SubDir", &attrib) == 1 &&
+	      (attrib & _A_SUBDIR), "directory entry reports _A_SUBDIR");
+
+	unsigned fattrib = 0;
+	count_matches("findtest/readme.txt", &fattrib);
+	check(!(fattrib & _A_SUBDIR), "regular file does not report _A_SUBDIR");
+
+	// Win32 separators in the spec.
+	check(count_matches("findtest\\*.pak") == 2,
+	      "backslash separators in the filespec work");
+
+	// "*" returns "." and ".." exactly as FindFirstFile does; callers such as
+	// Deltree rely on seeing and skipping them.
+	bool sawDot = false, sawDotDot = false;
+	__finddata64_t e;
+	intptr_t h = _findfirst64("findtest/*", &e);
+	if (h != -1) {
+		do {
+			if (strcmp(e.name, ".") == 0)  sawDot = true;
+			if (strcmp(e.name, "..") == 0) sawDotDot = true;
+		} while (_findnext64(h, &e) == 0);
+		_findclose(h);
+	}
+	check(sawDot && sawDotDot, "'.' and '..' are returned, as on Win32");
+
+	remove("findtest/Levels.pak");
+	remove("findtest/Objects.PAK");
+	remove("findtest/readme.txt");
+	rmdir("findtest/SubDir");
+	rmdir("findtest");
+}
+
+static void test_filetime()
+{
+	printf("SYSTEMTIME <-> FILETIME:\n");
+
+	// The Win32 epoch is 1601-01-01, not 1970-01-01.
+	SYSTEMTIME st;
+	memset(&st, 0, sizeof(st));
+	st.wYear = 1970; st.wMonth = 1; st.wDay = 1;
+
+	FILETIME ft;
+	check(SystemTimeToFileTime(&st, &ft) == TRUE, "converts a valid time");
+
+	unsigned long long v = ((unsigned long long)ft.dwHighDateTime << 32)
+	                     | (unsigned long long)ft.dwLowDateTime;
+	check(v == 116444736000000000ULL,
+	      "the Unix epoch is the documented FILETIME constant");
+
+	// Round trip.
+	SYSTEMTIME st2;
+	memset(&st2, 0, sizeof(st2));
+	st.wYear = 2004; st.wMonth = 3; st.wDay = 23;
+	st.wHour = 14;   st.wMinute = 30; st.wSecond = 45;
+	check(SystemTimeToFileTime(&st, &ft) && FileTimeToSystemTime(&ft, &st2),
+	      "round trip succeeds");
+	check(st2.wYear == 2004 && st2.wMonth == 3 && st2.wDay == 23 &&
+	      st2.wHour == 14 && st2.wMinute == 30 && st2.wSecond == 45,
+	      "round trip preserves every field");
+}
+
 int main()
 {
 	test_comparePathNames();
 	test_fopen_nocase();
+	test_adaptFilenameToLinux();
+	test_fullpath();
+	test_file_attributes();
+	test_crt_shims();
+	test_text_helpers();
+	test_find_api();
+	test_filetime();
 	test_critical_section();
 	test_interlocked();
 

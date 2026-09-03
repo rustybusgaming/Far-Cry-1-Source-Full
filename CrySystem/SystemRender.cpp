@@ -883,7 +883,9 @@ void CSystem::UpdateLoadingScreen()
 {
 	if (!m_bEditor)
 	{
-		if (GetIRenderer()->EF_Query(EFQ_RecurseLevel) <= 0)
+		// [webport] EF_Query returns void* but carries an integer for scalar
+		// queries; comparing a pointer with <= 0 is ill-formed. See Timer.cpp:247.
+		if ((INT_PTR)GetIRenderer()->EF_Query(EFQ_RecurseLevel) <= 0)
 		{
 			RenderBegin();
 			GetIConsole()->Draw();
