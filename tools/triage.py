@@ -131,6 +131,15 @@ EXCLUDED = {
     "DownloadManager.cpp": "WinInet; becomes fetch() on the web",
     "getdxver.cpp":       "DirectX version probe via COM",
 
+    # DirectInput device implementations, REPLACED (not shimmed) by the
+    # browser backend in CryInput/WebInput.cpp -- see its header for why
+    # emulating DirectInput was rejected. XGamepad is Xbox-only: IGamepad
+    # itself is declared inside an #ifdef _XBOX in IInput.h. A browser
+    # Gamepad API backend would be a separate device, like WebInput.
+    "CryInput/XKeyboard.cpp": "DirectInput device; replaced by WebInput.cpp",
+    "CryInput/XMouse.cpp":    "DirectInput device; replaced by WebInput.cpp",
+    "CryInput/XGamepad.cpp":  "Xbox-only (IGamepad is _XBOX-guarded)",
+
     # Win32 OVERLAPPED (asynchronous) file I/O: CreateEvent + ReadFileEx +
     # GetOverlappedResult + CancelIo + SleepEx alertable waits. There is no
     # honest shim for this -- it is a real async-I/O redesign, and on the web

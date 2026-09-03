@@ -52,6 +52,7 @@ add_subdirectory(CryEntitySystem)
 add_subdirectory(CryMovie)
 add_subdirectory(CryScriptSystem)
 add_subdirectory(CryAISystem)
+add_subdirectory(CryInput)
 
 # Tests for the port's own code (WinBase.h and friends).
 enable_testing()

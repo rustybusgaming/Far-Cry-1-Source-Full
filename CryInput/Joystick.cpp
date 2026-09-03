@@ -10,7 +10,7 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -236,7 +236,12 @@ bool CJoystick::Init(ILog *pLog)
 
 #endif
 
-
+	// [webport] The body above is inside a PS2-only #if, so on every other
+	// platform this bool function fell off the end and callers read an
+	// indeterminate value. There is no joystick device on the web build (the
+	// browser Gamepad API would be a separate backend, like WebInput), so
+	// reporting "not initialised" is the honest answer.
+	return false;
 }
 
 ///////////////////////////////////////////

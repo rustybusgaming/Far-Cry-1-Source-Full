@@ -1,7 +1,7 @@
 // CryInput.cpp : Defines the entry point for the DLL application.
 //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #ifndef _XBOX 
 _ACCESS_POOL;
@@ -28,7 +28,9 @@ ISystem* GetISystem()
 //////////////////////////////////////////////////////////////////////////
 
 
-#ifndef _XBOX
+// [webport] DllMain is the Win32 DLL entry point. There are no DLLs on Linux
+// and none at all in wasm, where every module links into one unit.
+#if !defined(_XBOX) && !defined(LINUX)
 BOOL APIENTRY DllMain( HANDLE hModule, 
                        DWORD  ul_reason_for_call, 
                        LPVOID lpReserved

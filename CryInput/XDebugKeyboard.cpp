@@ -5,7 +5,7 @@
 #ifdef DEBUG_KEYBOARD
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "Input.h"
 #include <ILog.h>
 #include <stdio.h>

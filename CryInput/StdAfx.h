@@ -25,7 +25,15 @@
 #ifdef WIN32
 #include <windows.h>
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
+// [webport] DirectInput does not exist outside Windows and is replaced
+// wholesale by the browser backend in WebInput.h. DInputCompat.h supplies only
+// the opaque handle types the declarations in this module mention, so that the
+// files which never touch an input device still compile.
+#if defined(LINUX)
+#include "DInputCompat.h"
+#else
 #include <dinput.h>
+#endif
 #endif
 
 //////////////////////////////////////////////////////////////////////

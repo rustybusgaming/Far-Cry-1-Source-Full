@@ -10,6 +10,25 @@
 #endif // _MSC_VER > 1000
 
 #include <IInput.h>
+
+// [webport] On the web build CXMouse IS CWebMouse.
+//
+// DirectInput is replaced outright rather than emulated (see WebInput.h), and
+// the replacement implements the same IKeyboard/IMouse interfaces plus the
+// handful of extra methods CInput calls. Aliasing the name here means CInput
+// and the action-map code pick up the browser device with no changes of their
+// own, and the DirectInput implementation below is simply not compiled.
+#if defined(LINUX)
+#include "WebInput.h"
+typedef CWebMouse CXMouse;
+#else
+
+// [webport] These headers name LPDIRECTINPUT8 in Init() declarations that the
+// web build never calls. See DInputCompat.h -- opaque types only, not an
+// emulation layer.
+#if defined(LINUX)
+#include "DInputCompat.h"
+#endif
 struct ITimer;
 struct ILog;
 
@@ -209,5 +228,7 @@ private:
 //////////////////////////////////////////////////////////////////
 
 };
+
+#endif // !LINUX -- DirectInput implementation above
 
 #endif // !defined(AFX_XMOUSE_H__E79C3125_5BF0_499D_B76E_6C1070554E8F__INCLUDED_)
