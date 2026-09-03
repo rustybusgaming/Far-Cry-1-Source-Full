@@ -13,11 +13,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "3dEngine.h"
-#include "visareas.h"
-#include "objman.h"
+#include "VisAreas.h"
+#include "ObjMan.h"
 #include "terrain_water.h"
 #include "CryStaticModel.h"
 
@@ -25,16 +25,16 @@
 #include "DecalManager.h"
 #include "bflyes.h"
 #include "rain.h"
-#include "meshidx.h"
+#include "MeshIdx.h"
 #include "detail_grass.h"
 #include "StencilShadowEdgeDetector.h"						// CStencilShadowEdgeDetector
 #include "StencilShadowConnectivityBuilder.h"			// CStencilShadowConnectivityBuilder
-#include "watervolumes.h"
+#include "WaterVolumes.h"
 
 #include "LMCompStructures.h"
 #include "LMSerializationManager2.h"
 
-#include "brush.h"
+#include "Brush.h"
 
 ISystem * Cry3DEngineBase::m_pSys=0;
 IRenderer * Cry3DEngineBase::m_pRenderer=0;
@@ -860,7 +860,10 @@ bool C3DEngine::PhysicalizeStaticObject(void *pForeignData,int iForeignData,int 
 	if (!m_pTerrain || !m_pObjManager)
 		return false;
 
-	int ix=(int)pForeignData&0xFF, iy=(int)pForeignData>>8&0xFF, iobj=(int)pForeignData>>16&0xFFFF;
+	// [webport] pForeignData is a void* used as a bit-packed integer (x, y and
+	// object index stuffed into one pointer-sized word). Casting straight to
+	// int truncates on 64-bit; INT_PTR keeps the whole word before the mask.
+	int ix=(int)((INT_PTR)pForeignData&0xFF), iy=(int)(((INT_PTR)pForeignData>>8)&0xFF), iobj=(int)(((INT_PTR)pForeignData>>16)&0xFFFF);
 	return 0;//m_pObjManager->PhysicalizeStatObjInst( &m_pTerrain->m_arrSecInfoTable[ix][iy]->m_lstStatObjects[iobj], true );
 }
 

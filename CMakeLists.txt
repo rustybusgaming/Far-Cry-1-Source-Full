@@ -47,6 +47,7 @@ option(CRY_HEADER_PARSE_GATE
 # ------------------------------------------------------------------------------
 add_subdirectory(CryCommon)
 add_subdirectory(CrySystem)
+add_subdirectory(Cry3DEngine)
 
 # Tests for the port's own code (WinBase.h and friends).
 enable_testing()

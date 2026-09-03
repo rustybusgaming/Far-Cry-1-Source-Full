@@ -823,8 +823,115 @@ inline char* itoa(int value, char* str, int radix)
 }
 inline char* _itoa(int v, char* s, int r) { return itoa(v, s, r); }
 
+// ltoa is the long-sized sibling. int and long differ in width on LP64, so it
+// is a separate implementation rather than an alias, or values above 2^31
+// would be truncated on the way in.
+inline char* ltoa(long value, char* str, int radix)
+{
+	if (!str) return NULL;
+	if (radix < 2 || radix > 36) { str[0] = '\0'; return str; }
+
+	char buf[68];
+	int i = 0;
+	unsigned long uv = (value < 0 && radix == 10) ? (unsigned long)(-value)
+	                                              : (unsigned long)value;
+	if (uv == 0) buf[i++] = '0';
+	while (uv) { int d = (int)(uv % (unsigned long)radix);
+	             buf[i++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+	             uv /= (unsigned long)radix; }
+	if (value < 0 && radix == 10) buf[i++] = '-';
+
+	int j = 0;
+	while (i > 0) str[j++] = buf[--i];
+	str[j] = '\0';
+	return str;
+}
+inline char* _ltoa(long v, char* s, int r) { return ltoa(v, s, r); }
+
 // MulDiv-style 64-bit widening multiply from the Win32 headers.
 inline long long Int32x32To64(int a, int b) { return (long long)a * (long long)b; }
+
+//////////////////////////////////////////////////////////////////////////
+// IsBadReadPtr
+//
+// A Win32 probe that asks whether a memory range is readable. It is used here
+// only inside assert()s (BrushLM.cpp, LMSerializationManager2.cpp).
+//
+// There is no POSIX equivalent, and there is no honest one to write: the only
+// way to test readability is to try the read, and a fault is not catchable in
+// wasm. Microsoft themselves deprecated it for exactly this reason -- it races,
+// and probing a guard page can crash the process it was meant to protect.
+//
+// So this checks the part that is both meaningful and reliable -- the null and
+// obviously-bogus-length cases -- and reports the range as readable otherwise.
+// That keeps the assertions honest about the bug they actually catch (a null
+// or unset pointer) without pretending to a guarantee we cannot make.
+//////////////////////////////////////////////////////////////////////////
+inline BOOL IsBadReadPtr(const void* lp, size_t ucb)
+{
+	if (ucb == 0) return FALSE;      // an empty range is vacuously readable
+	return lp == NULL ? TRUE : FALSE;
+}
+inline BOOL IsBadWritePtr(void* lp, size_t ucb) { return IsBadReadPtr(lp, ucb); }
+
+//////////////////////////////////////////////////////////////////////////
+// _makepath / _splitpath
+//
+// MSVC CRT path assembly. partman.cpp builds particle-library filenames with
+// it. Win32 path syntax is normalised to POSIX on the way out, since every
+// path that reaches the filesystem here has to use forward slashes.
+//////////////////////////////////////////////////////////////////////////
+inline void _makepath(char* path, const char* drive, const char* dir,
+                      const char* fname, const char* ext)
+{
+	if (!path) return;
+	std::string out;
+
+	// A drive letter has no meaning outside Windows; it is dropped rather
+	// than emitted as "C:" into a POSIX path.
+	(void)drive;
+
+	if (dir && *dir)
+	{
+		out = dir;
+		for (size_t i = 0; i < out.size(); ++i)
+			if (out[i] == '\\') out[i] = '/';
+		if (out[out.size() - 1] != '/') out += '/';
+	}
+	if (fname && *fname) out += fname;
+	if (ext && *ext)
+	{
+		if (*ext != '.') out += '.';
+		out += ext;
+	}
+	strcpy(path, out.c_str());
+}
+
+inline void _splitpath(const char* path, char* drive, char* dir,
+                       char* fname, char* ext)
+{
+	if (drive) drive[0] = '\0';
+	if (dir)   dir[0]   = '\0';
+	if (fname) fname[0] = '\0';
+	if (ext)   ext[0]   = '\0';
+	if (!path) return;
+
+	std::string p(path);
+	for (size_t i = 0; i < p.size(); ++i)
+		if (p[i] == '\\') p[i] = '/';
+
+	size_t slash = p.rfind('/');
+	std::string d = (slash == std::string::npos) ? std::string() : p.substr(0, slash + 1);
+	std::string rest = (slash == std::string::npos) ? p : p.substr(slash + 1);
+
+	size_t dot = rest.rfind('.');
+	std::string f = (dot == std::string::npos) ? rest : rest.substr(0, dot);
+	std::string e = (dot == std::string::npos) ? std::string() : rest.substr(dot);
+
+	if (dir)   strcpy(dir, d.c_str());
+	if (fname) strcpy(fname, f.c_str());
+	if (ext)   strcpy(ext, e.c_str());
+}
 
 //////////////////////////////////////////////////////////////////////////
 // Missing Linux-layer text helpers

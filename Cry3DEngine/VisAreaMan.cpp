@@ -13,15 +13,15 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "StatObj.h"
-#include "objman.h"
-#include "visareas.h"
+#include "ObjMan.h"
+#include "VisAreas.h"
 #include "terrain_sector.h"
-#include "3dengine.h"
+#include "3dEngine.h"
 #include "cbuffer.h"
-#include "3dengine.h"
+#include "3dEngine.h"
 #include "IMarkers.h"
 
 CVisAreaManager::CVisAreaManager()
@@ -353,8 +353,12 @@ void CVisAreaManager::PortalsDrawDebug()
 		for(int v=0; v<m_lstVisAreas.Count(); v++)
 		{
 			GetRenderer()->Draw3dBBox(m_lstVisAreas[v]->m_vBoxMin, m_lstVisAreas[v]->m_vBoxMax, DPRIM_SOLID_BOX);
+			// [webport] "(float*)&Vec3d(1,1,1)" took the address of a temporary.
+			// DrawLabelEx reads three floats for the colour, so a named local
+			// gives it the same bytes with a lifetime that spans the call.
+			Vec3d vLabelColor(1,1,1);
 			GetRenderer()->DrawLabelEx((m_lstVisAreas[v]->m_vBoxMin+ m_lstVisAreas[v]->m_vBoxMax)*0.5f,
-        1,(float*)&Vec3d(1,1,1),0,1,m_lstVisAreas[v]->m_sName);
+        1,(float*)&vLabelColor,0,1,m_lstVisAreas[v]->m_sName);
 
 			GetRenderer()->SetMaterialColor(0,1,0,0.25f);
 			GetRenderer()->Draw3dBBox(m_lstVisAreas[v]->m_vGeomBoxMin, m_lstVisAreas[v]->m_vGeomBoxMax);
@@ -367,8 +371,10 @@ void CVisAreaManager::PortalsDrawDebug()
 			GetRenderer()->SetMaterialColor(fError,fError*(m_lstPortals[v]->m_lstConnections.Count()<2),0,0.25f);
 			GetRenderer()->Draw3dBBox(m_lstPortals[v]->m_vBoxMin, m_lstPortals[v]->m_vBoxMax, DPRIM_SOLID_BOX);
 
+			// [webport] Address of a temporary; same as the VisArea label above.
+			Vec3d vPortalLabelColor(1,1,1);
 			GetRenderer()->DrawLabelEx((m_lstPortals[v]->m_vBoxMin+ m_lstPortals[v]->m_vBoxMax)*0.5f,
-				1,(float*)&Vec3d(1,1,1),0,1,m_lstPortals[v]->m_sName);
+				1,(float*)&vPortalLabelColor,0,1,m_lstPortals[v]->m_sName);
 
 			CVisArea * pPortal = m_lstPortals[v];
 			Vec3d vCenter = (pPortal->m_vBoxMin+pPortal->m_vBoxMax)*0.5f;

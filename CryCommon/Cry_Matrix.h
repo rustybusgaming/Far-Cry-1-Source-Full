@@ -2177,4 +2177,9 @@ ILINE Quaternion_tpl<F>::Quaternion_tpl(const Matrix44_tpl<F1,SI,SJ>& m)
 // ambiguous. f32 is the instantiation the engine actually uses.
 ILINE Matrix44 GetTransposed44( const Matrix44& m );
 
+// Same problem, different function: GetTranslationMat is a friend of
+// Matrix44_tpl but takes only a Vec3, so ADL searches Vec3_tpl's scope and
+// never finds it (Vegetation.cpp:327).
+ILINE Matrix44 GetTranslationMat( const Vec3& v );
+
 #endif //MATRIX_H

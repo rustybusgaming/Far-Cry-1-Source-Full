@@ -13,12 +13,12 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "StatObj.h"
-#include "objman.h"
+#include "ObjMan.h"
 #include "cbuffer.h"
-#include "3DEngine.h"
+#include "3dEngine.h"
 
 void CStatObjInst::Serialize(bool bSave, ICryPak * pPak, FILE * f)
 {

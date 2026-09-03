@@ -13,11 +13,16 @@ frame yet; this is the foundation work everything else is blocked behind.
 ```
 CryCommon headers     125/125   100.0%
 CrySystem sources      45/45    100.0%
-TOTAL                 170/170
+Cry3DEngine sources    73/73    100.0%
+TOTAL                 243/243
 ```
 
-Starting point was **1/188**. Both modules compile completely, the build is
-green, and `libCrySystem.a` links.
+Starting point was **1/188**. Three modules compile completely, the build is
+green, and `libCrySystem.a` (9.6MB) and `libCry3DEngine.a` (13.6MB) both build.
+
+Cry3DEngine **compiles but does not link yet, and is not meant to** — it calls
+into IRenderer, CryPhysics and CryAnimation, none of which are ported.
+Compiling is this milestone; linking waits on those.
 
 19 further translation units are **excluded by design** — Win32-only code that
 is not a port target (the commctrl Lua debugger, `SystemWin32.cpp`, dbghelp
@@ -44,6 +49,7 @@ away.
 | 7 | 31 headers made self-contained | 134/174 |
 | 8 | path helpers, CRT shims, find API | 154/171 |
 | 9 | render header cycle, `XmlParser` iterators | **170/170** |
+| 10 | Cry3DEngine: 225 includes, 4 root causes | **243/243** |
 
 ---
 
@@ -304,13 +310,31 @@ need *replacing* rather than shimming:
 - **`<ext/hash_map>`** → `unordered_map` (currently silenced with
   `-Wno-deprecated`).
 
-Two warning classes in the current build are worth attention before they
-become runtime mysteries:
+**`memcpy` over vtable pointers.** The build emits 255
+`-Wdynamic-class-memaccess` warnings, but they are **two** sites in
+`IShader.h` repeated once per including translation unit:
 
-| Warning | Count | Why it matters |
-|---|---|---|
-| `-Wdynamic-class-memaccess` | 96 | `memcpy`/`memset` over classes with vtables. It happened to work with MSVC's layout; it is undefined behaviour and a plausible source of wasm-only crashes. |
-| `-Wswitch` | 99 | Unhandled enum cases — mostly benign, but worth auditing once. |
+```cpp
+CCObject::CloneObject(CCObject *srcObj)   // IShader.h:605
+    memcpy(this, srcObj, sizeof(*srcObj));
+
+CMatInfo::operator=(const CMatInfo& src)  // IShader.h:2115
+    memcpy(this, &src, sizeof(CMatInfo));
+```
+
+Both classes are polymorphic, so the copy overwrites the destination's vtable
+pointer. In the common case source and destination have the same dynamic type,
+the bytes written are identical and it happens to work — which is why it has
+survived. But `CloneObject` takes a **base** pointer: hand it a derived object
+and it writes the derived vptr into a base object, and the next virtual call
+dispatches into the wrong table.
+
+This is left as-is deliberately. The fix is member-wise assignment, which
+changes copy semantics in the renderer's hot path, and there is no test
+coverage to verify it against yet. It is recorded here rather than patched
+blind — it is a strong candidate for a wasm-only crash that looks inexplicable.
+
+`-Wswitch` (254) is unhandled enum cases; mostly benign, worth one audit.
 
 Also outstanding: `BONE_PHYSICS_COMP::nPhysGeom` is an `int` that carries a
 `phys_geometry*` (`CryHeaders.h`). It is sound on wasm32, where pointers are
@@ -338,15 +362,33 @@ rewriting to GLSL ES.
 
 ### Remaining modules
 
-The same tooling applies to the twelve modules still unported. Expect the same
-distribution of causes — the tools exist now precisely because these problems
-recur at scale:
+Cry3DEngine took four root causes and 225 include corrections. The tooling
+generalises, so the eleven modules still unported should go the same way:
 
 ```bash
-tools/fix_includes.py Cry3DEngine        # Win32 include spellings
-tools/selfcontain.py --module Cry3DEngine --apply
-tools/triage.py --module Cry3DEngine
+tools/fix_includes.py CryCommon CryAnimation      # Win32 include spellings
+tools/triage.py --module CryAnimation             # what is left
+tools/selfcontain.py --module CryAnimation --apply # for header-heavy modules
 ```
+
+`tools/triage.py` knows the include layout for every engine module; add new
+ones to its `MODULES` table.
+
+Rough order of difficulty, easiest first:
+
+| Module | LOC | Note |
+|---|---|---|
+| CryEntitySystem | 12k | mostly interface glue |
+| CryMovie | 19k | cutscene sequencer |
+| CryInput | 9k | DirectInput — needs a real replacement |
+| CryNetwork | 16k | Winsock; browsers need a WebSocket relay |
+| CryPhysics | 32k | self-contained, heavy inline asm |
+| CryAnimation | 35k | large, but no external SDK |
+| CryScriptSystem | 17k | bundles Lua |
+| CryFont | 50k | bundles FreeType2 |
+| CrySoundSystem | 10k | thin wrapper over the missing FMOD 3.61 binary |
+| CryAISystem | 9k | |
+| RenderDll | 253k | Milestone 4 |
 
 ### Known hard blockers
 

@@ -13,11 +13,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "DecalManager.h"
-#include "3dengine.h"
-#include "objman.h"
+#include "3dEngine.h"
+#include "ObjMan.h"
 
 void CDecal::Process(bool & active, IRenderer * pIRenderer, const float fCurTime, C3DEngine * p3DEngine, IShader * pShader, CCamera* pCamera, float fSortOffset)
 {
@@ -301,7 +301,12 @@ void CDecal::DrawBigDecalOnTerrain(C3DEngine * p3DEngine, IRenderer * pIRenderer
 		{
 			pIRenderer->SetTexture(m_nTexId);
 			pIRenderer->SetTexClampMode(true);
-			pIRenderer->DrawTriStrip(&(CVertexBuffer (&verts[0].xyz.x,VERTEX_FORMAT_P3F_TEX2F)),verts.Count());
+			// [webport] Taking the address of a temporary is ill-formed; MSVC 7.1
+			// allowed it. DrawTriStrip only reads the buffer for the duration of
+			// the call, so a named local has identical behaviour and a valid
+			// lifetime across it.
+			CVertexBuffer vbTriStrip(&verts[0].xyz.x,VERTEX_FORMAT_P3F_TEX2F);
+			pIRenderer->DrawTriStrip(&vbTriStrip,verts.Count());
 		}
   }
 }

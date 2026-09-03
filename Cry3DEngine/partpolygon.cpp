@@ -13,11 +13,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "partman.h"
 
-#include "objman.h"
+#include "ObjMan.h"
 
 
 #include "3dEngine.h"

@@ -224,21 +224,51 @@ def compile_one(job):
     }
 
 
+# Per-module include paths. A module compiles against CryCommon (always) plus
+# its own directory and whatever vendored subdirectories it carries.
+MODULES = {
+    "CryCommon":   {"kind": "headers", "incs": []},
+    "CrySystem":   {"kind": "sources", "incs": ["XML", "zlib"]},
+    "Cry3DEngine": {"kind": "sources", "incs": []},
+    "CryAnimation":{"kind": "sources", "incs": []},
+    "CryEntitySystem": {"kind": "sources", "incs": []},
+    "CryPhysics":  {"kind": "sources", "incs": []},
+    "CryMovie":    {"kind": "sources", "incs": []},
+    "CryFont":     {"kind": "sources", "incs": ["FreeType2/include"]},
+    "CryInput":    {"kind": "sources", "incs": []},
+    "CryNetwork":  {"kind": "sources", "incs": []},
+    "CryAISystem": {"kind": "sources", "incs": []},
+    "CrySoundSystem": {"kind": "sources", "incs": []},
+    "CryScriptSystem": {"kind": "sources", "incs": []},
+}
+
+
 def gather(modules):
     common = os.path.join(ROOT, "CryCommon")
     jobs = []
-    if "CryCommon" in modules:
-        for h in sorted(os.listdir(common)):
-            if h.endswith(".h"):
-                jobs.append(("header", os.path.join(common, h), [common]))
-    if "CrySystem" in modules:
-        sysdir = os.path.join(ROOT, "CrySystem")
-        incs = [common, sysdir, os.path.join(sysdir, "XML"),
-                os.path.join(sysdir, "zlib")]
-        for dirpath, _, files in os.walk(sysdir):
-            for fn in sorted(files):
-                if fn.endswith(".cpp"):
-                    jobs.append(("source", os.path.join(dirpath, fn), incs))
+    for mod in modules:
+        cfg = MODULES.get(mod)
+        if cfg is None:
+            print("unknown module %r (known: %s)"
+                  % (mod, ", ".join(sorted(MODULES))), file=sys.stderr)
+            continue
+        moddir = os.path.join(ROOT, mod)
+        if not os.path.isdir(moddir):
+            print("no such directory: %s" % moddir, file=sys.stderr)
+            continue
+
+        incs = [common, moddir] + [os.path.join(moddir, i) for i in cfg["incs"]]
+
+        if cfg["kind"] == "headers":
+            # A pure interface module: compile each header as its own TU.
+            for h in sorted(os.listdir(moddir)):
+                if h.endswith(".h"):
+                    jobs.append(("header", os.path.join(moddir, h), incs))
+        else:
+            for dirpath, _, files in os.walk(moddir):
+                for fn in sorted(files):
+                    if fn.endswith(".cpp"):
+                        jobs.append(("source", os.path.join(dirpath, fn), incs))
     return jobs
 
 
@@ -285,7 +315,8 @@ def main():
     for r in results:
         if r["excluded"]:
             continue
-        k = "CryCommon headers" if r["kind"] == "header" else "CrySystem sources"
+        mod = r["path"].split("/")[0]
+        k = "%s %s" % (mod, "headers" if r["kind"] == "header" else "sources")
         by_kind[k][1] += 1
         if r["ok"]:
             by_kind[k][0] += 1
