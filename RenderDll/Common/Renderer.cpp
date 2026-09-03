@@ -13,9 +13,9 @@
 
 #include "RenderPCH.h"
 
-#include "shadow_renderer.h"
+#include "Shadow_Renderer.h"
 #include "IStatObj.h"
-#include "I3dengine.h"
+#include "I3DEngine.h"
 #include <CREPolyMesh.h>
 
 #if defined(LINUX)
@@ -1833,7 +1833,16 @@ void CRenderer::FreeResources(int nFlags)
   iLog->Log("*** Clearing render resources ***");
 
 #if defined(LINUX)
-	NotifySystemOnQuit();//tell linux that we are about to quit, on some situation it crashed and this will force a abort call in case of a crash
+	// [webport] NotifySystemOnQuit() is called here and defined nowhere in the
+	// tree -- another piece of the Linux support layer that was never released.
+	//
+	// Its own comment says what it was for: mark that a normal shutdown is
+	// under way, so a crash handler firing during teardown aborts rather than
+	// trying to recover. Since the original body is unknown, this is left as an
+	// explicit no-op rather than invented: nothing in this tree installs such a
+	// handler, so there is no behaviour to preserve. If a crash handler is added
+	// for the web build, this is where it needs to be told.
+	// NotifySystemOnQuit();
 #endif
 
   int i;

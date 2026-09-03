@@ -19,6 +19,12 @@
 #endif
 
 #ifdef PS2
+// [webport] Renderer.h declares m_DynVB as an ARRAY of
+// struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F, so it needs the complete type.
+// IRenderer.h only forward-declares it (deliberately -- that declaration is
+// what breaks the IShader/IRenderer/VertexFormats cycle), which is enough to
+// pass one by pointer but not to size a member.
+#include <VertexFormats.h>
 #include "File.h"
 #endif
 

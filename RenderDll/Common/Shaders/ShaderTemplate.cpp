@@ -1034,7 +1034,9 @@ void CShader::mfCheckShaderResTexturesHW(TArray<SShaderPassHW> &Dst, SShader *ef
         nameNorm[0] = 0;
         if (Res->m_Textures[EFTT_BUMP] && !Res->m_Textures[EFTT_BUMP]->m_Name.empty())
         {
-          char *str;
+          // [webport] const: strstr() on a const char* returns const char*
+          // in C++, and str is only used for pointer arithmetic here.
+          const char *str;
           if (str=strstr(Res->m_Textures[EFTT_BUMP]->m_Name.c_str(), "_ddn"))
           {
             int nSize = str - Res->m_Textures[EFTT_BUMP]->m_Name.c_str();
@@ -1052,7 +1054,9 @@ void CShader::mfCheckShaderResTexturesHW(TArray<SShaderPassHW> &Dst, SShader *ef
         }
         if (Res->m_Textures[EFTT_NORMALMAP] && !Res->m_Textures[EFTT_NORMALMAP]->m_Name.empty())
         {
-          char *str;
+          // [webport] const: strstr() on a const char* returns const char*
+          // in C++, and str is only used for pointer arithmetic here.
+          const char *str;
           if (str=strstr(Res->m_Textures[EFTT_NORMALMAP]->m_Name.c_str(), "_ddn"))
           {
             int nSize = str - Res->m_Textures[EFTT_NORMALMAP]->m_Name.c_str();

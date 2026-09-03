@@ -24,20 +24,25 @@ CryPhysics             34/34    100.0%
 CryAnimation           72/72    100.0%
 CryFont                11/11    100.0%
 CrySoundSystem         13/13    100.0%
-TOTAL                 455/455
+RenderDll/Common       81/81    100.0%
+RenderDll/XRenderNULL  11/11    100.0%
+TOTAL                 547/547
 ```
 
-Starting point was **1/188**. **Every engine module except the renderer now
-compiles**, producing twelve static libraries plus the CryCommon header gate.
+Starting point was **1/188**. Every engine module now compiles, **including the
+backend-independent renderer and Crytek's null renderer**, producing fourteen
+static libraries.
 
-They **compile but do not link into a game, and are not meant to yet** — the
-renderer is unported, and two modules wrap middleware that ships as Windows
-binaries with no source (see *Known hard blockers*). Compiling is this
-milestone.
+`XRenderNULL` is the one that matters strategically. It is Crytek's own null
+renderer — 11 sources, ~2.4k lines, shipped for the dedicated server — and it
+implements the full `IRenderer` interface while drawing nothing. It is what
+makes a **headless build** possible: the engine can link and run with no GL, no
+D3D, no Cg and no shader rewrite. Doing it before touching `XRenderOGL` means
+the WebGL2 work starts from a running engine rather than a compiling one.
 
 27 further translation units are **excluded by design**: Win32-only code that
-is not a port target, plus the parts of CryAISystem that are missing from the
-source drop entirely. Each carries a reason:
+is not a port target, plus the parts of CryAISystem missing from the source
+drop entirely. Each carries a reason:
 
 ```bash
 tools/triage.py --excluded
@@ -60,7 +65,8 @@ tools/triage.py --excluded
 | 12 | CryInput: DirectInput replaced by a browser backend | **307/307** |
 | 13 | CryNetwork: Winsock mapped to BSD sockets | **325/325** |
 | 14 | CryPhysics: `validator.h` reconstructed | 359/359 |
-| 15 | CryAnimation, CryFont, CrySoundSystem | **455/455** |
+| 15 | CryAnimation, CryFont, CrySoundSystem | 455/455 |
+| 16 | RenderDll/Common + XRenderNULL | **547/547** |
 
 ---
 
@@ -424,34 +430,52 @@ UDP-speaking server, which this repository does not provide.
 DataChannel in `{ordered:false, maxRetransmits:0}` mode is genuinely
 datagram-like and is the correct destination. It costs a signalling server.
 
-### Remaining modules
+### Next: a headless build
 
-Only **RenderDll** (253k lines) is left, and it is Milestone 4 in its entirety:
-`XRenderOGL` is OpenGL 1.x with 74 `glBegin` sites, 44 references to
+Everything except the rasteriser now compiles, so the next milestone is
+LINKING, not more compiling — and `XRenderNULL` is what makes that reachable
+without any shader work. The remaining pieces are known:
+
+1. **Link a headless executable** against the fourteen libraries with
+   `CryRenderNULL` as the renderer. Expect undefined symbols where modules
+   reference each other's Win32-only code, and the excluded translation units
+   to leave real gaps (the overlapped-I/O streamer above all).
+2. **Restructure the main loop.** The engine's `while (!quit)` cannot work on
+   the browser's event loop. Asyncify is enabled as the short-term answer;
+   `emscripten_set_main_loop` is the real fix.
+3. **Replace the overlapped-I/O streamer** (Milestone 2), which is the largest
+   remaining hole in a runnable build.
+
+### Milestone 4 — the rasteriser
+
+`XRenderOGL` is 71k lines and the only complete GL backend, but it is OpenGL
+1.x: 74 `glBegin` immediate-mode sites, 44 references to
 `GL_NV_register_combiners`, WGL context creation, and NVIDIA Cg shaders whose
-`cgGL.lib` is a binary blob with no source. WebGL2 supports none of it.
+`cgGL.lib` is a binary blob with no source. WebGL2 (GLES 3.0) supports none of
+it — no immediate mode, no fixed-function combiners, no Cg.
 
-Two of the modules that now compile still need real work before they can run:
+So this is a rewrite, not a port: every shader and the whole
+fixed-function/combiner pipeline has to be re-expressed in GLSL ES. It is the
+bulk of the remaining project and the reason the honest estimate is measured in
+person-years.
 
-- **CrySoundSystem** compiles but wraps `crysound.lib`, which is FMOD 3.61
-  rebranded and Windows-binary-only. The wrapper is worth having compiled — it
-  is the interface any replacement (OpenAL, WebAudio) has to satisfy.
-- **CryNetwork** compiles and works natively, but is UDP-based and needs the
-  WebRTC DataChannel transport described above.
+`XRenderD3D8`/`D3D9` and `XRenderPS2` have no path to the web at all.
 
 ### Inline assembly
 
-Now that every non-renderer module compiles, the remaining wasm blockers are
-visible. Inline x86 assembly appears in seven files outside RenderDll. One is
-already handled — `CrySoundSystem/OGGDecoder.cpp` read the CPU timestamp
-counter with `rdtsc`, and now uses `CLOCK_MONOTONIC` on this seam, which is
-both portable and better behaved (no drift with frequency scaling, no jump on
-thread migration).
+Two of the seven inline-assembly sites outside XRenderOGL are now handled, both
+timing code that had to be *recomputed* rather than translated — wasm has no
+inline assembly at all, being a stack machine with no register file to name:
 
-The rest are guarded by `_CPU_X86` or `WIN32` and are simply not compiled here,
-so they surface at Milestone 2 rather than now. wasm has no inline assembly at
-all — it is a stack machine with no register file to name — so each one has to
-be recomputed, not translated.
+- `CrySoundSystem/OGGDecoder.cpp` read the TSC with `rdtsc`.
+- `RenderDll/RenderPCH.h` had two cycle counters. Its LINUX branch called
+  `rdtscl()`, a Linux **kernel** macro from `<asm/msr.h>` that does not exist
+  in userspace, so that branch had never compiled at all.
+
+Both now use `CLOCK_MONOTONIC`, which is also better behaved than the TSC ever
+was: no drift with frequency scaling, no jump on thread migration. The unit
+becomes nanoseconds instead of cycles, which is invisible to callers because
+they only difference two readings.
 
 ### Known hard blockers
 

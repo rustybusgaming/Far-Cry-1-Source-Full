@@ -10,7 +10,7 @@
 #ifndef __D3DCGPSHADER_H__
 #define __D3DCGPSAHDER_H__
 
-#include "cg\cgD3D9.h"
+#include "CG/cgD3D9.h"
 #include <direct.h>
 
 #define CG_FP_CACHE_VER    3.4

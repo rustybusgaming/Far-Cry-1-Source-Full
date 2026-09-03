@@ -58,6 +58,7 @@ add_subdirectory(CryPhysics)
 add_subdirectory(CryAnimation)
 add_subdirectory(CryFont)
 add_subdirectory(CrySoundSystem)
+add_subdirectory(RenderDll)
 
 # Tests for the port's own code (WinBase.h and friends).
 enable_testing()

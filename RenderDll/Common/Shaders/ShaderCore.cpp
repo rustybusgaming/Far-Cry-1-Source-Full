@@ -225,7 +225,10 @@ SShader& SShader::operator = (const SShader& src)
 
   mfFree();
   
-  int Offs = (int)&(((SShader *)0)->m_Id);
+  // [webport] Hand-rolled offsetof: the address of a member on a null
+  // pointer. The value is a small member offset, so only the intermediate
+  // needs to be pointer-width.
+  int Offs = (int)(INT_PTR)&(((SShader *)0)->m_Id);
   byte *d = (byte *)this;
   byte *s = (byte *)&src;
   memcpy(&d[Offs], &s[Offs], sizeof(SShader)-Offs);

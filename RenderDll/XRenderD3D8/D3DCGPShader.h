@@ -11,7 +11,7 @@
 #define __D3DCGPSAHDER_H__
 
 #ifndef _XBOX
-#include "cg\cgD3D8.h"
+#include "CG/cgD3D8.h"
 #endif
 #include "D3DPShaders.h"
 

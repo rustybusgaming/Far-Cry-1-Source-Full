@@ -268,6 +268,16 @@ MODULES = {
                        "incs": ["OggVorbisInclude", "OggVorbisInclude/vorbis",
                                 "OggVorbisInclude/ogg"]},
     "CryScriptSystem": {"kind": "sources", "incs": ["LUA", "LUA/lib"]},
+
+    # The renderer. RenderDll/ itself holds the shared precompiled header, and
+    # Common/ holds the backend-independent renderer (shaders, textures, render
+    # elements). The per-backend directories are separate modules below.
+    "RenderDll/Common": {"kind": "sources",
+                         "incs": ["..", "Textures", "Textures/Image",
+                                  "Shaders", "RendElements", "NvTriStrip", "3Dc"]},
+    "RenderDll/XRenderNULL": {"kind": "sources",
+                              "incs": ["..", "../Common", "../Common/Textures",
+                                       "../Common/Shaders", "../Common/RendElements"]},
 }
 
 

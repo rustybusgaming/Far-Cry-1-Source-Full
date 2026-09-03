@@ -422,6 +422,29 @@ static void test_bmp_headers()
 	check((const char*)&h.bfOffBits - base == 10, "bfOffBits is at offset 10");
 }
 
+//////////////////////////////////////////////////////////////////////////
+// DEFINE_ALIGNED_DATA_* -- alignment must SURVIVE, not just parse.
+//
+// The macros originally put __attribute__((aligned)) after the declarator,
+// which parses for a bare declaration and is a syntax error once the name has
+// a constructor initialiser. Moving the attribute between type and name fixes
+// the parse -- but a wrongly placed attribute can also be silently ignored,
+// which compiles and then misaligns SSE loads at runtime. So the alignment is
+// asserted, not assumed, in both forms the engine uses.
+//////////////////////////////////////////////////////////////////////////
+DEFINE_ALIGNED_DATA_STATIC( float, s_alignedInit[4], 16 );
+DEFINE_ALIGNED_DATA_STATIC( float, s_alignedBare[4], 16 );
+
+static void test_aligned_data()
+{
+	printf("DEFINE_ALIGNED_DATA:\n");
+	check(((UINT_PTR)&s_alignedInit % 16) == 0, "static array is 16-byte aligned");
+	check(((UINT_PTR)&s_alignedBare % 16) == 0, "second declaration also aligned");
+
+	DEFINE_ALIGNED_DATA( float, local[4], 16 );
+	check(((UINT_PTR)&local % 16) == 0, "non-static form is 16-byte aligned");
+}
+
 int main()
 {
 	test_comparePathNames();
@@ -434,6 +457,7 @@ int main()
 	test_find_api();
 	test_filetime();
 	test_bmp_headers();
+	test_aligned_data();
 	test_critical_section();
 	test_interlocked();
 

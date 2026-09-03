@@ -10,7 +10,7 @@
 #ifndef __D3DCGVPROGRAM_H__
 #define __D3DCGVPROGRAM_H__
 
-#include "cg\cgD3D9.h"
+#include "CG/cgD3D9.h"
 #include <direct.h>
 
 #define CG_VP_CACHE_VER    3.4

@@ -790,7 +790,25 @@ L = __rdtsc();
 #endif
 
 #elif defined(LINUX)
-	rdtscl( L );
+  // [webport] The original called rdtscl(), which is a Linux KERNEL macro from
+  // <asm/msr.h> -- it does not exist in userspace, so this branch never
+  // compiled. And rdtsc itself is x86-only; wasm has no inline assembly at all.
+  //
+  // CLOCK_MONOTONIC answers the same question and is better behaved: it does
+  // not drift with CPU frequency scaling and does not jump when a thread
+  // migrates between cores. The unit becomes nanoseconds rather than cycles,
+  // which is invisible to callers because they only ever difference two
+  // readings.
+  //
+  // Truncating to 32 bits is deliberate and matches the original: the comment
+  // in the x86 branch above notes that even a GHz CPU wraps in about four
+  // seconds, so callers already cope with the wrap.
+  {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    L = (uint)((unsigned long long)ts.tv_sec * 1000000000ULL +
+               (unsigned long long)ts.tv_nsec);
+  }
 #endif
   return L;
 }
@@ -809,6 +827,16 @@ inline double sCycles2()
 			mov   [H],edx   // Save high value.
 	}
 	return ((double)L +  4294967296.0 * (double)H);
+#elif defined(LINUX)
+	// [webport] The #else below calls __rdtsc(), an MSVC intrinsic. Same
+	// substitution as sCycles() above, but keeping the full 64-bit value since
+	// this one returns a double and is used for longer intervals.
+	{
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		return (double)((unsigned long long)ts.tv_sec * 1000000000ULL +
+		                (unsigned long long)ts.tv_nsec);
+	}
 #else
 	return __rdtsc();
 #endif

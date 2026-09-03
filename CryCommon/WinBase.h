@@ -63,6 +63,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <ctype.h>
+#include <fcntl.h>      // O_RDONLY/O_WRONLY/O_CREAT for CreateFile
 #include <dirent.h>
 #include <fnmatch.h>
 #include <string>
@@ -561,8 +562,145 @@ typedef struct tagRGBQUAD {
 #pragma pack(pop)
 
 #ifndef BI_RGB
-#	define BI_RGB 0
+#	define BI_RGB       0
+#	define BI_RLE8      1
+#	define BI_RLE4      2
+#	define BI_BITFIELDS 3
 #endif
+
+//////////////////////////////////////////////////////////////////////////
+// File access constants and time comparison
+//
+// GENERIC_READ and friends are the access-mode flags for CreateFile. The
+// texture streamer passes them around as opaque values, so the exact bit
+// patterns only need to be self-consistent -- but they are given their real
+// Win32 values anyway, since a mismatch would be invisible until something
+// serialised one.
+//////////////////////////////////////////////////////////////////////////
+#ifndef GENERIC_READ
+#	define GENERIC_READ     0x80000000
+#	define GENERIC_WRITE    0x40000000
+#	define GENERIC_EXECUTE  0x20000000
+#	define GENERIC_ALL      0x10000000
+#endif
+
+#ifndef FILE_SHARE_READ
+#	define FILE_SHARE_READ   0x00000001
+#	define FILE_SHARE_WRITE  0x00000002
+#	define FILE_SHARE_DELETE 0x00000004
+#endif
+
+#ifndef FILE_FLAG_SEQUENTIAL_SCAN
+	// CreateFile caching hints. They are advisory even on Win32; POSIX has
+	// posix_fadvise for the same purpose, which the streamer does not use.
+#	define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
+#	define FILE_FLAG_RANDOM_ACCESS   0x10000000
+#	define FILE_FLAG_OVERLAPPED      0x40000000
+#	define FILE_ATTRIBUTE_TEMPORARY  0x00000100
+#endif
+
+#ifndef OPEN_EXISTING
+#	define CREATE_NEW        1
+#	define CREATE_ALWAYS     2
+#	define OPEN_EXISTING     3
+#	define OPEN_ALWAYS       4
+#	define TRUNCATE_EXISTING 5
+#endif
+
+//! Win32 semantics: -1 if the first time is earlier, 0 if equal, 1 if later.
+inline LONG CompareFileTime(const FILETIME* a, const FILETIME* b)
+{
+	if (!a || !b) return 0;
+	unsigned long long va = ((unsigned long long)a->dwHighDateTime << 32) | a->dwLowDateTime;
+	unsigned long long vb = ((unsigned long long)b->dwHighDateTime << 32) | b->dwLowDateTime;
+	return va < vb ? -1 : (va > vb ? 1 : 0);
+}
+
+//////////////////////////////////////////////////////////////////////////
+// CreateFile / CloseHandle / GetFileTime
+//
+// These map cleanly because of a choice made upstream: LinuxSpecific.h defines
+// HANDLE as CHandle<int,-1>, an fd wrapper, with the comment "remember that
+// file descriptors are ints under linux". So CreateFile really is open(), and
+// the handle really is the descriptor -- no table, no bookkeeping.
+//
+// Only the flags the engine passes are honoured. The sharing mode has no POSIX
+// equivalent (advisory locking is not the same thing and would change
+// behaviour), and the caching hints are advisory even on Win32, so both are
+// accepted and ignored rather than faked.
+//////////////////////////////////////////////////////////////////////////
+inline HANDLE CreateFile(const char* lpFileName,
+                         DWORD dwDesiredAccess,
+                         DWORD /*dwShareMode*/,
+                         void* /*lpSecurityAttributes*/,
+                         DWORD dwCreationDisposition,
+                         DWORD /*dwFlagsAndAttributes*/,
+                         HANDLE /*hTemplateFile*/)
+{
+	if (!lpFileName) return INVALID_HANDLE_VALUE;
+
+	int flags = 0;
+	const bool wantRead  = (dwDesiredAccess & GENERIC_READ)  != 0;
+	const bool wantWrite = (dwDesiredAccess & GENERIC_WRITE) != 0;
+	if (wantRead && wantWrite) flags = O_RDWR;
+	else if (wantWrite)        flags = O_WRONLY;
+	else                       flags = O_RDONLY;
+
+	switch (dwCreationDisposition)
+	{
+	case CREATE_NEW:        flags |= O_CREAT | O_EXCL;  break;
+	case CREATE_ALWAYS:     flags |= O_CREAT | O_TRUNC; break;
+	case OPEN_ALWAYS:       flags |= O_CREAT;           break;
+	case TRUNCATE_EXISTING: flags |= O_TRUNC;           break;
+	case OPEN_EXISTING:     default:                    break;
+	}
+
+	int fd = open(lpFileName, flags, 0644);
+	if (fd < 0)
+	{
+		// Asset paths carry Windows casing; retry case-insensitively, as
+		// fopen_nocase does.
+		std::string resolved;
+		if (!cry_resolve_nocase(lpFileName, resolved))
+			return INVALID_HANDLE_VALUE;
+		fd = open(resolved.c_str(), flags, 0644);
+		if (fd < 0) return INVALID_HANDLE_VALUE;
+	}
+	return HANDLE(fd);
+}
+
+inline BOOL CloseHandle(HANDLE h)
+{
+	int fd = h.Handle();
+	if (fd < 0) return FALSE;
+	return close(fd) == 0 ? TRUE : FALSE;
+}
+
+//! Win32 reports all three times; POSIX has no creation time, so st_ctime
+//! (inode change time) stands in for it -- the closest thing available, and
+//! the engine only ever compares write times.
+inline BOOL GetFileTime(HANDLE h, FILETIME* pCreate, FILETIME* pAccess, FILETIME* pWrite)
+{
+	int fd = h.Handle();
+	if (fd < 0) return FALSE;
+
+	struct stat st;
+	if (fstat(fd, &st) != 0) return FALSE;
+
+	const unsigned long long EPOCH_DIFF = 11644473600ULL;
+	struct { FILETIME* ft; time_t t; } items[3] =
+		{ {pCreate, st.st_ctime}, {pAccess, st.st_atime}, {pWrite, st.st_mtime} };
+
+	for (int i = 0; i < 3; ++i)
+	{
+		if (!items[i].ft) continue;
+		unsigned long long v =
+			((unsigned long long)items[i].t + EPOCH_DIFF) * 10000000ULL;
+		items[i].ft->dwLowDateTime  = (DWORD)(v & 0xFFFFFFFFULL);
+		items[i].ft->dwHighDateTime = (DWORD)(v >> 32);
+	}
+	return TRUE;
+}
 
 //////////////////////////////////////////////////////////////////////////
 // Multimedia timer

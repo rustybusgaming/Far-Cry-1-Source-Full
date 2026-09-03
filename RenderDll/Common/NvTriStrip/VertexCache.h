@@ -1,3 +1,6 @@
+// [webport] memset comes from <string.h>; MSVC pulled it in transitively.
+#include <string.h>
+
   
 #ifndef VERTEX_CACHE_H
 

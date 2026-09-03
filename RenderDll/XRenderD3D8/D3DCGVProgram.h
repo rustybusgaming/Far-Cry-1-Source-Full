@@ -11,7 +11,7 @@
 #define __D3DCGVPROGRAM_H__
 
 #ifndef _XBOX
-#include "cg\cgD3D8.h"
+#include "CG/cgD3D8.h"
 #endif
 
 #define CG_CACHE_VER    1.0

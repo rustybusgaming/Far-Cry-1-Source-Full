@@ -35,7 +35,7 @@ extern SPipeVertex_D_1T gVerts[];
 //=======================================================================
 
 #ifndef _XBOX
-#include "cg\cgD3D8.h"
+#include "CG/cgD3D8.h"
 #endif
 
 // DRIVERD3D.H

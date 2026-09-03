@@ -9,7 +9,7 @@
 
 #include "stdafx.h"
 #include "DriverD3D8.h"
-#include "I3dengine.h"
+#include "I3DEngine.h"
 
 
 int CD3D8TexMan::m_Format = D3DFMT_A8R8G8B8;
@@ -4038,7 +4038,7 @@ void CD3D8TexMan::GenerateFlareMap()
   CTexMan::m_Text_Flare = CreateTexture("$Flare", 32, 4, 1, FT_CLAMP | FT_NOREMOVE, FT2_NODXT, &data[0][0][0], eTT_Base, -1.0f, -1.0f, 0, NULL, 0, eTF_8888);
 }
 
-#include "D3DCubemaps.h"
+#include "D3DCubeMaps.h"
 
 #ifdef _XBOX
 static void MakeCubeMapXBox(LPDIRECT3DCUBETEXTURE8 pCubeMap, int dwSize, bool bMips)
