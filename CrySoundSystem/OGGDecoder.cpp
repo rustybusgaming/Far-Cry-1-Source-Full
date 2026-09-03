@@ -3,7 +3,7 @@
 #include <ISound.h>
 #include <ISystem.h>
 #include <ICryPak.h>
-#include "oggdecoder.h"
+#include "OGGDecoder.h"
 #include "MusicSystem.h"
 
 COGGDecoder::COGGDecoder(IMusicSystem *pMusicSystem)
@@ -22,7 +22,25 @@ COGGDecoder::~COGGDecoder()
 
 void getTicks(int64* pnTime)
 {
-#ifdef WIN64
+#if defined(LINUX)
+	// [webport] The x86 branch below reads the CPU timestamp counter with
+	// inline assembly. rdtsc does not exist outside x86, and wasm has no
+	// inline assembly at all -- it is a stack machine with no register file to
+	// name -- so this is one of the places the port has to compute the value a
+	// different way rather than translate the instruction.
+	//
+	// The counter is only used here to time decode work, so a monotonic clock
+	// answers the same question. CLOCK_MONOTONIC is also better behaved than
+	// rdtsc ever was: it does not drift with CPU frequency scaling and does not
+	// jump when a thread migrates between cores.
+	//
+	// The unit changes from CPU cycles to nanoseconds. Every caller of this
+	// function compares two readings rather than converting to seconds, so the
+	// change of scale does not affect them.
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	*pnTime = (int64)ts.tv_sec * 1000000000LL + (int64)ts.tv_nsec;
+#elif defined(WIN64)
 	*pnTime = __rdtsc();
 #else
 	__asm {

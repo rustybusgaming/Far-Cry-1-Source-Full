@@ -11,7 +11,7 @@
 #include "CrySkinMorphBuilder.h"
 #include "ControllerManager.h"
 #include "CgfUtils.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "CryModelSubmesh.h"
 using namespace CryStringUtils;
 

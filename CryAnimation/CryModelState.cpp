@@ -7,7 +7,7 @@
 #include "ControllerManager.h"
 #include "ChunkFileReader.h"
 #include "StringUtils.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "CryCharDecalManager.h"
 #include "BoneLightDynamicBind.h"
 #include "CryModEffMorph.h"

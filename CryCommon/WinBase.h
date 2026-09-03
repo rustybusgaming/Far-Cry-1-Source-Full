@@ -516,6 +516,55 @@ inline void GlobalMemoryStatus(LPMEMORYSTATUS ms)
 }
 
 //////////////////////////////////////////////////////////////////////////
+// BMP file headers
+//
+// CFontTexture::WriteToFile dumps the glyph atlas as a Windows bitmap, which
+// is genuinely useful when debugging font rendering in a port. These are a
+// FILE FORMAT, not an API -- the layout is fixed and documented -- so defining
+// them here is portable rather than an emulation.
+//
+// The packing matters and is easy to get silently wrong. BITMAPFILEHEADER is
+// 14 bytes: a 2-byte magic followed by 4-byte fields. With default alignment
+// the compiler inserts two bytes of padding after bfType, producing a 16-byte
+// struct and a BMP that no reader will open. #pragma pack(2) is what makes it
+// 14. The exact field widths matter too, which is why they are spelled with
+// fixed-size types rather than long/short.
+//////////////////////////////////////////////////////////////////////////
+#pragma pack(push, 2)
+
+typedef struct tagBITMAPFILEHEADER {
+	uint16 bfType;          // 'BM'
+	uint32 bfSize;          // total file size in bytes
+	uint16 bfReserved1;
+	uint16 bfReserved2;
+	uint32 bfOffBits;       // byte offset from file start to the pixel data
+} BITMAPFILEHEADER, *LPBITMAPFILEHEADER;
+
+typedef struct tagBITMAPINFOHEADER {
+	uint32 biSize;          // size of THIS struct, i.e. 40
+	int32  biWidth;
+	int32  biHeight;        // negative means a top-down image
+	uint16 biPlanes;        // always 1
+	uint16 biBitCount;
+	uint32 biCompression;   // BI_RGB (0) for uncompressed
+	uint32 biSizeImage;
+	int32  biXPelsPerMeter;
+	int32  biYPelsPerMeter;
+	uint32 biClrUsed;
+	uint32 biClrImportant;
+} BITMAPINFOHEADER, *LPBITMAPINFOHEADER;
+
+typedef struct tagRGBQUAD {
+	uint8 rgbBlue, rgbGreen, rgbRed, rgbReserved;   // note: BGRA order
+} RGBQUAD;
+
+#pragma pack(pop)
+
+#ifndef BI_RGB
+#	define BI_RGB 0
+#endif
+
+//////////////////////////////////////////////////////////////////////////
 // Multimedia timer
 //
 // timeGetTime() is winmm's millisecond clock. On Win32 it differs from
@@ -783,6 +832,23 @@ inline FILE* fopen_nocase(const char* file, const char* mode)
 	}
 	return NULL;
 }
+
+//////////////////////////////////////////////////////////////////////////
+// __noop
+//
+// An MSVC intrinsic that evaluates to nothing and discards its arguments
+// unevaluated. It is the idiom the engine uses to compile a debug macro away
+// while keeping the call syntactically valid, e.g.
+//     #define LOG if (0) __noop else Log
+// ((void)0) reproduces the "valid expression that does nothing" part, which is
+// all the engine relies on.
+//////////////////////////////////////////////////////////////////////////
+#ifndef __noop
+	// Function-LIKE: the engine writes __noop(args), so an object-like macro
+	// would leave a stray argument list behind. Variadic macros are a GNU
+	// extension in C++98, which -std=gnu++98 enables.
+#	define __noop(...) ((void)0)
+#endif
 
 //////////////////////////////////////////////////////////////////////////
 // MSVC CRT functions with no POSIX spelling

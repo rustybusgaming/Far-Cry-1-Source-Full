@@ -16,7 +16,7 @@
 #define _CRY_ANIMATION_BASE_HEADER_
 
 #include "FrameProfiler.h"
-#include "CVars.h"
+#include "cvars.h"
 
 
 

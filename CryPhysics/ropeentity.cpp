@@ -10,7 +10,7 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "bvtree.h"
 #include "geometry.h"
@@ -359,7 +359,11 @@ __ropeframe++;
 			m_segs[i].dir = dir;
 			m_segs[i].pt = ptend[0] + m_segs[i].dir*(newseglen*i);
 		}
-		m_bAwake = m_pTiedTo[0]->GetStatus(&pe_status_awake()) | m_pTiedTo[1]->GetStatus(&pe_status_awake());
+		// [webport] Address of a temporary, twice. Two separate locals rather than
+		// one reused: GetStatus writes into the struct, so sharing it between the
+		// two calls would let the first entity's result leak into the second.
+		pe_status_awake awake0, awake1;
+		m_bAwake = m_pTiedTo[0]->GetStatus(&awake0) | m_pTiedTo[1]->GetStatus(&awake1);
 		m_BBox[0].x = min(m_segs[0].pt.x,m_segs[m_nSegs].pt.x); m_BBox[1].x = max(m_segs[0].pt.x,m_segs[m_nSegs].pt.x); 
 		m_BBox[0].y = min(m_segs[0].pt.y,m_segs[m_nSegs].pt.y); m_BBox[1].y = max(m_segs[0].pt.y,m_segs[m_nSegs].pt.y); 
 		m_BBox[0].z = min(m_segs[0].pt.z,m_segs[m_nSegs].pt.z); m_BBox[1].z = max(m_segs[0].pt.z,m_segs[m_nSegs].pt.z); 

@@ -91,9 +91,12 @@ public:
 	int GetBaseFreq() { return m_nBaseFreq; }
 	//void AddFlags(int nFlags) { m_Props.nFlags|=nFlags; }
 	//void RemoveFlags(int nFlags) { m_Props.nFlags&=~nFlags; }
-	bool NotLoaded() { return (m_Data.m_pData==NULL) && (m_pReadStream==NULL); }
-	bool Loaded() { return (m_Data.m_pData!=NULL) && (m_pReadStream==NULL); }
-	bool Loading() { return (m_Data.m_pData==NULL) && (m_pReadStream!=NULL); }
+	// [webport] NULL is 0L, and IReadStreamPtr (_smart_ptr) has both
+	// operator==(const _I*) and an implicit conversion, so "ptr == NULL" is
+	// ambiguous. Casting NULL to the pointed-to type picks the intended one.
+	bool NotLoaded() { return (m_Data.m_pData==NULL) && (m_pReadStream==(IReadStream*)NULL); }
+	bool Loaded() { return (m_Data.m_pData!=NULL) && (m_pReadStream==(IReadStream*)NULL); }
+	bool Loading() { return (m_Data.m_pData==NULL) && (m_pReadStream!=(IReadStream*)NULL); }
 	bool LoadFailure() { return m_bLoadFailure; }
 };
 

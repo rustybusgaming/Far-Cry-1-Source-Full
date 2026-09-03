@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #ifdef _CRY_ANIMATION_BASE_HEADER_
-#include "CVars.h"
+#include "cvars.h"
 #endif
 #include "BoneLightBindInfo.h"
 

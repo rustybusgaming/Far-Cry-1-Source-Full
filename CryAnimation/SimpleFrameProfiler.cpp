@@ -2,7 +2,7 @@
 
 #include "stdafx.h"
 #include "SimpleFrameProfiler.h"
-#include "CVars.h"
+#include "cvars.h"
 
 static float g_fColorWhite[4] = {1,1,1,1};
 static float g_fColorHeader[4] = {0.5f,0.9f,1,0.75f};

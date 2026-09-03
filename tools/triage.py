@@ -35,7 +35,7 @@ DEFINES = [
     "LINUX", "LINUX64", "_LINUX",
     "NOT_USE_BINK_SDK", "NOT_USE_DIVX_SDK", "NOT_USE_PUNKBUSTER_SDK",
     "EXCLUDE_UBICOM_CLIENT_SDK", "NOT_USE_UBICOM_SDK", "_CRY_WEBPORT",
-    "_LARGEFILE64_SOURCE", "_FILE_OFFSET_BITS=64",
+    "_LARGEFILE64_SOURCE", "_FILE_OFFSET_BITS=64", "CS_VERSION_361",
 ]
 
 SILENCED = [
@@ -254,11 +254,19 @@ MODULES = {
     "CryEntitySystem": {"kind": "sources", "incs": []},
     "CryPhysics":  {"kind": "sources", "incs": []},
     "CryMovie":    {"kind": "sources", "incs": ["xml", "xml/Expat"]},
-    "CryFont":     {"kind": "sources", "incs": ["FreeType2/include"]},
+    # FreeType's ft2build.h includes <ftheader.h> by bare name, so its config
+    # directory has to be on the include path, not just include/.
+    "CryFont":     {"kind": "sources",
+                    "incs": ["FreeType2/include", "FreeType2/include/freetype/config",
+                             "FreeType2"]},
     "CryInput":    {"kind": "sources", "incs": []},
     "CryNetwork":  {"kind": "sources", "incs": []},
     "CryAISystem": {"kind": "sources", "incs": []},
-    "CrySoundSystem": {"kind": "sources", "incs": []},
+    # vorbisfile.h is included by bare name, so OggVorbisInclude/vorbis has
+    # to be on the path as well as OggVorbisInclude.
+    "CrySoundSystem": {"kind": "sources",
+                       "incs": ["OggVorbisInclude", "OggVorbisInclude/vorbis",
+                                "OggVorbisInclude/ogg"]},
     "CryScriptSystem": {"kind": "sources", "incs": ["LUA", "LUA/lib"]},
 }
 

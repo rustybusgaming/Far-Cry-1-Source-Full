@@ -6,7 +6,7 @@
 
 #if FOR_TEST
 #include "CryAnimation.h"
-#include "CVars.h"
+#include "cvars.h"
 #endif
 
 // returns the size of the skin, the number of bases being calculated

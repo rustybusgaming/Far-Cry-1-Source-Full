@@ -11,7 +11,7 @@
 #include "CryCharDecalManager.h"
 #include "CryCharDecalBuilder.h"
 #include "CryCharDecal.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "MathUtils.h"
 
 // nVertexAllocStep == 2^nVertexAllocStepLog2 is the step with which the vertex buffer will be enlarged when needed

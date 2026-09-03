@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "utils.h"
 #include "primitives.h"
@@ -220,7 +220,10 @@ int tri_box_intersection(const triangle *ptri, const box *pbox, prim_inters *pin
 	pinters->iFeature[1][0] = 0xA0 | dec_mod3[i];
 
 	haveinters:
-	iStart = idxmax3((const real*)&n.abs());
+	// [webport] n.abs() returns a temporary; taking its address is ill-formed.
+	// A named local has the lifetime the call needs.
+	const vectorr nAbs = n.abs();
+	iStart = idxmax3((const real*)&nAbs);
 	// if triangle's area is comparable with the most parallel box face, check box edges vs triangle also
 	if ((pt[1]-pt[0]^pt[2]-pt[0]).len2() > sqr(pbox->size[inc_mod3[iStart]]*pbox->size[dec_mod3[iStart]])) { 
 		int nborderpt0 = pinters->nborderpt;

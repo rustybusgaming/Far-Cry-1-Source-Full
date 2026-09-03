@@ -1,5 +1,5 @@
 #include "StdAfx.h"
-#include "musicsystem.h"
+#include "MusicSystem.h"
 #include <CrySizer.h>
 #include <ISystem.h>
 #include "PatternDecoder.h"
@@ -126,7 +126,7 @@ bool CMusicSystem::Init()
 #if (defined CS_VERSION_372)
   m_pStream=CS_Stream_Create(_StreamingCallback, (int)((float)m_nSampleRate*m_fLatency)*m_nBytesPerSample, CS_STEREO | CS_16BITS | CS_SIGNED | CS_2D, 44100, (void *)this);
 #elif  defined CS_VERSION_361
-	m_pStream=CS_Stream_Create(_StreamingCallback, (int)((float)m_nSampleRate*m_fLatency)*m_nBytesPerSample, CS_STEREO | CS_16BITS | CS_SIGNED | CS_2D, 44100, (int)this);
+	m_pStream=CS_Stream_Create(_StreamingCallback, (int)((float)m_nSampleRate*m_fLatency)*m_nBytesPerSample, CS_STEREO | CS_16BITS | CS_SIGNED | CS_2D, 44100, (int)(INT_PTR)this);   // [webport] pointer passed as an int userdata; INT_PTR avoids truncation
 #else
   m_pStream=CS_Stream_Create(_StreamingCallback, (int)((float)m_nSampleRate*m_fLatency)*m_nBytesPerSample, CS_STEREO | CS_16BITS | CS_SIGNED | CS_2D, 44100, (INT_PTR)this);
 #endif

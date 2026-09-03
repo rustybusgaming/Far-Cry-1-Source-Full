@@ -400,6 +400,28 @@ static void test_filetime()
 	      "round trip preserves every field");
 }
 
+//////////////////////////////////////////////////////////////////////////
+// BMP file headers -- a FILE FORMAT, so the layout is not ours to choose.
+//
+// These sizes are the whole point of the #pragma pack(2) around them. Without
+// it the compiler pads after the 2-byte bfType and the file header becomes 16
+// bytes, which produces a BMP no reader will open -- and nothing else would
+// catch it, because the code still compiles and still writes a file.
+//////////////////////////////////////////////////////////////////////////
+static void test_bmp_headers()
+{
+	printf("BMP headers:\n");
+	check(sizeof(BITMAPFILEHEADER) == 14, "BITMAPFILEHEADER is exactly 14 bytes");
+	check(sizeof(BITMAPINFOHEADER) == 40, "BITMAPINFOHEADER is exactly 40 bytes");
+	check(sizeof(RGBQUAD) == 4,           "RGBQUAD is exactly 4 bytes");
+
+	// Field offsets matter as much as the total size.
+	BITMAPFILEHEADER h;
+	const char* base = (const char*)&h;
+	check((const char*)&h.bfSize    - base == 2,  "bfSize is at offset 2");
+	check((const char*)&h.bfOffBits - base == 10, "bfOffBits is at offset 10");
+}
+
 int main()
 {
 	test_comparePathNames();
@@ -411,6 +433,7 @@ int main()
 	test_text_helpers();
 	test_find_api();
 	test_filetime();
+	test_bmp_headers();
 	test_critical_section();
 	test_interlocked();
 

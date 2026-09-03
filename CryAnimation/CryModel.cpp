@@ -28,7 +28,7 @@
 
 #include <IEdgeConnectivityBuilder.h>									// IEdgeConnectivityBuilder
 #include "ControllerManager.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "CrySkinMorph.h"
 #include "CrySkinMorphBuilder.h"
 #include "CrySkinRigidBasis.h"

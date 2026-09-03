@@ -1,4 +1,4 @@
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "AnimObject.h"
 #include "StringUtils.h"
 #include "cvars.h"

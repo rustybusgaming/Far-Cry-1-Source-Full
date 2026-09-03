@@ -10,7 +10,7 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "bvtree.h"
 #include "geometry.h"
@@ -875,7 +875,12 @@ float CLivingEntity::ShootRayDown(CPhysicalEntity **pentlist,int nents, const ve
 		R = matrix3x3f(m_qrot);
 	else
 		R.SetIdentity();
-	CRayGeom aray; aray.CreateRay(pos+R*vectorf(0,0,m_hCyl-m_hPivot),R*vectorf(0,0,-m_hCyl-m_size.x),&(R*vectorf(0,0,-1)));
+	// [webport] "&(R*vectorf(...))" takes the address of a temporary. CreateRay
+	// only reads the direction during the call, so a named local is equivalent
+	// and has a valid lifetime.
+	CRayGeom aray;
+	const vectorf rayDir = R*vectorf(0,0,-1);
+	aray.CreateRay(pos+R*vectorf(0,0,m_hCyl-m_hPivot),R*vectorf(0,0,-m_hCyl-m_size.x),&rayDir);
 	geom_world_data gwd;
 	geom_contact *pcontacts;
 	CPhysicalEntity *pPrevCollider=m_pLastGroundCollider;

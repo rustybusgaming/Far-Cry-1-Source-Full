@@ -55,6 +55,14 @@ set(CRY_COMMON_DEFINES
     # as the supported way to build without it; this is precisely that case.
     NOT_USE_UBICOM_SDK
 
+    # CryCommon/crysound.h declares "#define CS_VERSION 3.61f" and types its
+    # file callbacks as unsigned int. CrySoundSystem selects its callback
+    # signatures with CS_VERSION_361 / CS_VERSION_372, and nothing defined
+    # either -- so it fell into an #else branch declaring them with UINT_PTR,
+    # which does not match the header on any 64-bit target. This states the
+    # version the bundled header actually is.
+    CS_VERSION_361
+
     _CRY_WEBPORT               # our own guard for web-port-specific divergence
 
     # CryPak.cpp's LINUX branch uses struct stat64 / _fstat64 explicitly.

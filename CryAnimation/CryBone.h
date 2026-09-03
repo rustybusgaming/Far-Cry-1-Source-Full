@@ -23,6 +23,16 @@ class CryModel;
 // The bone class contains bone matrices and pointers to it parent and child’s.
 // Also every bone has pointer to array of controllers for this bone.
 // Bone uses controller to get position and orientation of bone for current animation frame.
+// [webport] CryModelState appears in CryBone::setParent() below but was never
+// declared -- the header relied on the .vcproj compile order having seen it
+// first. It is only used by pointer, so a declaration suffices.
+//
+// This MUST sit at namespace scope, not inside the class body: declared there
+// it introduces a NESTED CryBone::CryModelState, and setParent() then takes a
+// pointer to the wrong type -- which is exactly what happened, and showed up
+// as an unrelated-looking error at CryModelState.cpp:849.
+class CryModelState;
+
 class CryBone : public ICryBone
 {
 friend class CryModel;

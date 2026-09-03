@@ -1,6 +1,6 @@
 #include "stdafx.h"
 //#include "CryAnimation.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "RenderUtils.h"
 
 

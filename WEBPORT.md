@@ -12,25 +12,30 @@ frame yet; this is the foundation work everything else is blocked behind.
 
 ```
 CryCommon headers     126/126   100.0%
-CrySystem sources      45/45    100.0%
-Cry3DEngine sources    73/73    100.0%
+CrySystem              45/45    100.0%
+Cry3DEngine            73/73    100.0%
 CryEntitySystem        12/12    100.0%
 CryMovie               23/23    100.0%
 CryScriptSystem          9/9    100.0%
 CryAISystem              3/3    100.0%
 CryInput                 8/8    100.0%
 CryNetwork             26/26    100.0%
-TOTAL                 325/325
+CryPhysics             34/34    100.0%
+CryAnimation           72/72    100.0%
+CryFont                11/11    100.0%
+CrySoundSystem         13/13    100.0%
+TOTAL                 455/455
 ```
 
-Starting point was **1/188**. Nine modules compile completely and the build is
-green, producing eight static libraries plus the CryCommon header gate.
+Starting point was **1/188**. **Every engine module except the renderer now
+compiles**, producing twelve static libraries plus the CryCommon header gate.
 
-They **compile but do not link into a game yet, and are not meant to** — each
-calls into modules that are still unported (above all the renderer). Compiling
-is this milestone.
+They **compile but do not link into a game, and are not meant to yet** — the
+renderer is unported, and two modules wrap middleware that ships as Windows
+binaries with no source (see *Known hard blockers*). Compiling is this
+milestone.
 
-27 further translation units are **excluded by design** — Win32-only code that
+27 further translation units are **excluded by design**: Win32-only code that
 is not a port target, plus the parts of CryAISystem that are missing from the
 source drop entirely. Each carries a reason:
 
@@ -54,6 +59,8 @@ tools/triage.py --excluded
 | 11 | CryEntitySystem, CryMovie, CryScriptSystem, CryAISystem | **290/290** |
 | 12 | CryInput: DirectInput replaced by a browser backend | **307/307** |
 | 13 | CryNetwork: Winsock mapped to BSD sockets | **325/325** |
+| 14 | CryPhysics: `validator.h` reconstructed | 359/359 |
+| 15 | CryAnimation, CryFont, CrySoundSystem | **455/455** |
 
 ---
 
@@ -419,21 +426,32 @@ datagram-like and is the correct destination. It costs a signalling server.
 
 ### Remaining modules
 
-Four left. The tooling generalises:
+Only **RenderDll** (253k lines) is left, and it is Milestone 4 in its entirety:
+`XRenderOGL` is OpenGL 1.x with 74 `glBegin` sites, 44 references to
+`GL_NV_register_combiners`, WGL context creation, and NVIDIA Cg shaders whose
+`cgGL.lib` is a binary blob with no source. WebGL2 supports none of it.
 
-```bash
-tools/fix_includes.py CryCommon CryAnimation
-tools/triage.py --module CryAnimation
-tools/selfcontain.py --module CryAnimation --apply
-```
+Two of the modules that now compile still need real work before they can run:
 
-| Module | LOC | Note |
-|---|---|---|
-| CryPhysics | 32k | self-contained, heavy inline x86 asm |
-| CryAnimation | 35k | large, but no external SDK |
-| CryFont | 50k | bundles FreeType2 |
-| CrySoundSystem | 10k | thin wrapper over the missing FMOD 3.61 binary |
-| RenderDll | 253k | Milestone 4 |
+- **CrySoundSystem** compiles but wraps `crysound.lib`, which is FMOD 3.61
+  rebranded and Windows-binary-only. The wrapper is worth having compiled — it
+  is the interface any replacement (OpenAL, WebAudio) has to satisfy.
+- **CryNetwork** compiles and works natively, but is UDP-based and needs the
+  WebRTC DataChannel transport described above.
+
+### Inline assembly
+
+Now that every non-renderer module compiles, the remaining wasm blockers are
+visible. Inline x86 assembly appears in seven files outside RenderDll. One is
+already handled — `CrySoundSystem/OGGDecoder.cpp` read the CPU timestamp
+counter with `rdtsc`, and now uses `CLOCK_MONOTONIC` on this seam, which is
+both portable and better behaved (no drift with frequency scaling, no jump on
+thread migration).
+
+The rest are guarded by `_CPU_X86` or `WIN32` and are simply not compiled here,
+so they surface at Milestone 2 rather than now. wasm has no inline assembly at
+all — it is a stack machine with no register file to name — so each one has to
+be recomputed, not translated.
 
 ### Known hard blockers
 

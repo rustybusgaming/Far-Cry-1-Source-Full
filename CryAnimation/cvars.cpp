@@ -25,7 +25,7 @@ CryAnimVars::CryAnimVars ()
 #define DECLARE_INT_VARIABLE(_var, _default) m_##_var = declare (#_var,_default,VF_CHEAT);
 #define DECLARE_FLOAT_VARIABLE(_var, _default,_comment) m_##_var = pConsole->CreateVariable(#_var, (#_default), VF_CHEAT, _comment); assert(m_##_var)
 #define DECLARE_FLOAT_VARIABLE_DUMP(_var, _default,_comment) m_##_var = pConsole->CreateVariable(#_var, (#_default), VF_DUMPTODISK, _comment); assert(m_##_var)
-#include "CVars-list.h"
+#include "cvars-list.h"
 #undef DECLARE_STRING_VARIABLE
 #undef DECLARE_INT_VARIABLE
 #undef DECLARE_FLOAT_VARIABLE
@@ -42,7 +42,7 @@ CryAnimVars::~CryAnimVars ()
 #define DECLARE_INT_VARIABLE(_var, _default) //m_##_var->Release()
 #define DECLARE_FLOAT_VARIABLE(_var, _default,_comment) //m_##_var->Release()
 #define DECLARE_FLOAT_VARIABLE_DUMP(_var, _default,_comment) //m_##_var->Release()
-#include "CVars-list.h"
+#include "cvars-list.h"
 #undef DECLARE_STRING_VARIABLE
 #undef DECLARE_INT_VARIABLE
 #undef DECLARE_FLOAT_VARIABLE

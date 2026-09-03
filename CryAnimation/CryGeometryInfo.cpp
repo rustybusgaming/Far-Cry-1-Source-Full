@@ -25,7 +25,7 @@
 #include "CrySkinFull.h"
 #include "CryBone.h"
 #include "RenderUtils.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "CryCompiledFile.h"
 
 CryGeometryInfo::CryGeometryInfo():

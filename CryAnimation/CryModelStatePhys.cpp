@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "CryModel.h"
 #include "CryModelState.h"
-#include "CVars.h"
+#include "cvars.h"
 
 ///////////////////////////////////////////// physics stuff /////////////////////////////////////////////////
 
@@ -58,7 +58,9 @@ void CryModelState::BuildPhysicalEntity(IPhysicalEntity *pent,float mass,int sur
 	if (surface_idx>=0)
 		pgp->surface_idx = surface_idx;
 	
-	pent->Action(&pe_action_remove_all_parts());
+	// [webport] Address of a temporary; a named local is valid and identical.
+	pe_action_remove_all_parts removeAllParts;
+	pent->Action(&removeAllParts);
 	
 	for(i=0;i<(int)numBones();i++) if (getBoneInfo(i)->m_PhysInfo[nLod].pPhysGeom) {
 		mtx = getBoneMatrixGlobal(i);
@@ -403,10 +405,14 @@ void CryModelState::SynchronizeWithPhysicalEntity(IPhysicalEntity *pent, const V
 		pe_status_pos sp;
 		pe_status_joint sj;
 		m_bPhysicsAwake = 0;
+		// [webport] Address of a temporary, twice. One local serves both: only
+		// GetStatus's RETURN value is used here (it is OR'd into a flag), never
+		// the struct's contents, so overwriting it per call is harmless.
+		pe_status_awake statusAwake;
 		if (pent)
-			m_bPhysicsAwake = pent->GetStatus(&pe_status_awake());
+			m_bPhysicsAwake = pent->GetStatus(&statusAwake);
 		for(j=0;j<m_nAuxPhys;j++)
-			m_bPhysicsAwake |= m_auxPhys[j].pPhysEnt->GetStatus(&pe_status_awake());
+			m_bPhysicsAwake |= m_auxPhys[j].pPhysEnt->GetStatus(&statusAwake);
 
 		if (!m_bPhysicsAwake && !m_bPhysicsWasAwake)
 			return;
@@ -685,7 +691,9 @@ void CryModelState::ProcessPhysics(float fDeltaTimePhys, int nNeff)
 		for(i=0;i<4;i++) if (m_pIKEffectors[i])
 			m_pIKEffectors[i]->Tick (fDeltaTimePhys);
 
-	if (m_pCharPhysics && (m_bPhysicsAwake = m_pCharPhysics->GetStatus(&pe_status_awake())))
+	// [webport] Address of a temporary; a named local is valid.
+	pe_status_awake statusAwakeChar;
+	if (m_pCharPhysics && (m_bPhysicsAwake = m_pCharPhysics->GetStatus(&statusAwakeChar)))
 	{
 		if (nNeff==0) 
 		{	// if there's no animation atm, just read the state from physics verbatim
@@ -785,8 +793,11 @@ void CryModelState::ProcessPhysics(float fDeltaTimePhys, int nNeff)
 		m_pCharPhysics->SetParams(&pab);
 	}
 
+	// [webport] Address of a temporary; hoisted ABOVE the for, since the loop
+	// body is unbraced and a declaration between them would become the body.
+	pe_status_awake statusAwakeAux;
 	for(i=0;i<m_nAuxPhys;i++)
-		m_bPhysicsAwake |= m_auxPhys[i].pPhysEnt->GetStatus(&pe_status_awake());
+		m_bPhysicsAwake |= m_auxPhys[i].pPhysEnt->GetStatus(&statusAwakeAux);
 
 	if (m_bPhysicsAwake)
 		m_uFlags |= nFlagsNeedReskinAllLODs;

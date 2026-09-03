@@ -13,7 +13,7 @@
 //////////////////////////////////////////////////////////////////////
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #ifndef _XBOX
 #include <ISystem.h>
 #include <CrySizer.h>
@@ -26,7 +26,7 @@
 #include "SoundSystem.h"
 #include "MusicSystem.h"
 #include "Sound.h"
-#include <I3dEngine.h> //needed to check if the listener is in indoor or outdoor
+#include <I3DEngine.h> //needed to check if the listener is in indoor or outdoor
 #include <ICryPak.h> //needed to check if the listener is in indoor or outdoor
 
 //#define CS_BUFFERSIZE   10         /* millisecond value for FMOD buffersize. */
@@ -163,7 +163,11 @@ static unsigned int F_CALLBACKAPI CrySound_fopen( const char *name )
 	{
 		GetISystem()->Warning( VALIDATOR_MODULE_SOUNDSYSTEM,VALIDATOR_WARNING,VALIDATOR_FLAG_SOUND,"Sound %s failed to load", name );
 	}
-	return (unsigned int)file;
+	// [webport] CrySound's file callbacks pass a FILE* back through an
+	// unsigned int handle, which truncates on any 64-bit target. INT_PTR makes
+	// the narrowing explicit; it is genuinely sound on wasm32, where pointers
+	// are 32 bits, and would need a handle table on a 64-bit native build.
+	return (unsigned int)(INT_PTR)file;
 }
 
 static void F_CALLBACKAPI CrySound_fclose( unsigned int nFile )
@@ -797,7 +801,7 @@ void CSoundSystem::Update()
 					//m_vecSoundSpotsActive.push_back(cs);
 					m_lstSoundSpotsActive.insert(cs);
 					nSoundSpotAdded++;
-					It=m_lstSoundSpotsInactive.erase(It);m_nInactiveSoundSpotsSize--;
+					m_lstSoundSpotsInactive.erase(It++);m_nInactiveSoundSpotsSize--;
 					m_itLastInactivePos=It;
 					cs->m_State=eSoundState_Active;
 					cs->Preload();										
@@ -840,7 +844,7 @@ void CSoundSystem::Update()
 		if (cs->m_pSound->LoadFailure())
 		{
 			cs->m_State=eSoundState_None;
-			It = m_lstSoundSpotsActive.erase(It);
+			m_lstSoundSpotsActive.erase(It++);
 			continue;
 		}
 
@@ -857,7 +861,7 @@ void CSoundSystem::Update()
 			m_nInactiveSoundSpotsSize++;
 
 			cs->m_State=eSoundState_Inactive;
-			It=m_lstSoundSpotsActive.erase(It);
+			m_lstSoundSpotsActive.erase(It++);
 			if (cs->m_bPlaying)
 			{
 				// Stop can release sound for autostop onces.
@@ -898,7 +902,7 @@ void CSoundSystem::Update()
 					m_itLastInactivePos=pr.first;
 					m_nInactiveSoundSpotsSize++;
 
-					It=m_lstSoundSpotsActive.erase(It);
+					m_lstSoundSpotsActive.erase(It++);
 					cs->m_State=eSoundState_Inactive;
 				}
 				else
@@ -1175,7 +1179,13 @@ void CSoundSystem::SetSoundActiveState(CSound *pSound, ESoundActiveState State)	
 			//SoundVecItor It=std::find(m_vecSoundSpotsInactive.begin(), m_vecSoundSpotsInactive.end(), pSound);
 			SoundListItor It=m_lstSoundSpotsInactive.find(pSound);
 			ASSERT(It!=m_lstSoundSpotsInactive.end());
-			m_itLastInactivePos=m_lstSoundSpotsInactive.erase(It);
+			// [webport] std::set::erase returns void in C++98 (C++11 made it return
+			// an iterator; MSVC's STL returned one as an extension). The element
+			// after It has to be captured BEFORE the erase invalidates It, so that
+			// m_itLastInactivePos keeps the meaning it had.
+			SoundListItor itNextInactive = It; ++itNextInactive;
+			m_lstSoundSpotsInactive.erase(It);
+			m_itLastInactivePos = itNextInactive;
 			m_nInactiveSoundSpotsSize--;			
 			break;
 		}
@@ -1386,7 +1396,13 @@ void CSoundSystem::RemoveReference(CSound *cs)
 			{
 				//if (((It-m_SoundSpotsInactive.begin())>=m_nLastInactiveListPos) && (m_nLastInactiveListPos>0))
 				//	m_nLastInactiveListPos--;
-				m_itLastInactivePos=m_lstSoundSpotsInactive.erase(It);
+				// [webport] std::set::erase returns void in C++98 (C++11 made it return
+				// an iterator; MSVC's STL returned one as an extension). The element
+				// after It has to be captured BEFORE the erase invalidates It, so that
+				// m_itLastInactivePos keeps the meaning it had.
+				SoundListItor itNextInactive = It; ++itNextInactive;
+				m_lstSoundSpotsInactive.erase(It);
+				m_itLastInactivePos = itNextInactive;
 				m_nInactiveSoundSpotsSize--;				
 			}
 			break;
@@ -1957,7 +1973,12 @@ void CSoundSystem::GetMemoryUsage(class ICrySizer* pSizer)
 #endif
 
 		//CS_GetMemoryStats(&nCurrentAlloced, &nMaxAlloced);
-		if (!pSizer->AddObject(&CS_Init, nCurrentAlloced))
+		// [webport] AddObject takes a const void* used purely as an identity
+		// token for the memory it is reporting. A FUNCTION pointer does not
+		// implicitly convert to void* in standard C++ -- they are different
+		// pointer categories -- so the cast is explicit. Nothing dereferences
+		// it; it only has to be a stable, unique address.
+		if (!pSizer->AddObject((const void*)&CS_Init, nCurrentAlloced))
 			return;
 	}
 }

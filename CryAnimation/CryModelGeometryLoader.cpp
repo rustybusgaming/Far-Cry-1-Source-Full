@@ -10,7 +10,7 @@
 #include "CryModelGeometryLoader.h"
 #include "CryBoneHierarchyLoader.h"
 #include "StringUtils.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "CgfUtils.h"
 
 CryModelGeometryLoader::CryModelGeometryLoader ():

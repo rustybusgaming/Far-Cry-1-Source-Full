@@ -54,6 +54,10 @@ add_subdirectory(CryScriptSystem)
 add_subdirectory(CryAISystem)
 add_subdirectory(CryInput)
 add_subdirectory(CryNetwork)
+add_subdirectory(CryPhysics)
+add_subdirectory(CryAnimation)
+add_subdirectory(CryFont)
+add_subdirectory(CrySoundSystem)
 
 # Tests for the port's own code (WinBase.h and friends).
 enable_testing()
