@@ -49,6 +49,10 @@ option(CRY_HEADER_PARSE_GATE
 # Third-party C sources vendored into the tree (zlib, expat, md5). They are
 # built here rather than inside CrySystem because they are C, not C++, and need
 # a different warning and standard policy.
+# Hoisted to the top level: find_package() creates Threads::Threads as a
+# directory-scoped imported target, and both Headless/ and tests/ link it.
+find_package(Threads REQUIRED)
+
 cry_add_vendor_libs()
 
 # FreeType 2, vendored under CryFont/FreeType2/ and likewise never built.

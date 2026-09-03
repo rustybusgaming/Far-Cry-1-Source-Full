@@ -27,9 +27,26 @@
 // Globals.
 //////////////////////////////////////////////////////////////////////////
 CRenderer *gRenDev = NULL;
+
+// [webport] These three were per-DLL copies of engine-wide values, and in one
+// link unit only one copy of each can exist. See CryCommon/StaticModules.h.
+//
+// Nothing is lost by dropping the renderer's:
+//
+//   g_bProfilerEnabled is the frame profiler's switch and belongs to
+//   CrySystem/FrameProfileSystem.cpp, which owns the profiler.
+//
+//   g_CpuFlags and g_SecondsPerCycle are caches of ISystem::GetCPUFlags() and
+//   ISystem::GetSecondsPerCycle(). Every module that defined them filled them
+//   from the same ISystem, so one shared copy holds the same value -- and this
+//   backend never wrote to them at all (only the GL and D3D9 backends do), so
+//   the renderer's copy was left at zero for the whole run. Sharing CryAnimation's,
+//   which is assigned in CreateCharManager, can only improve on that.
+#if !defined(_CRY_STATIC_MODULES)
 bool g_bProfilerEnabled = false;
 int g_CpuFlags;
 double g_SecondsPerCycle;
+#endif // !_CRY_STATIC_MODULES
 
 #ifndef _XBOX
 #include <CrtDebugStats.h>

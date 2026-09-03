@@ -124,10 +124,25 @@ int *pTest_int;
 //CryCharManager *pCharMan;
 IPhysicalWorld *pIPhysicalWorld;
 
+// [webport] One link unit, one GetISystem().
+//
+// ISystem.h declares a single global GetISystem(), and every module DLL used
+// to carry its own definition of it, private to that DLL and initialised by
+// that module's factory. Linked together they are duplicate symbols.
+//
+// Collapsing them onto CrySystem's definition is not a behaviour change: each
+// copy returned the pointer to the one CSystem that CrySystem had already
+// created, and the module factories run during CSystem::Init, after
+// CrySystem's g_System is set. The local pointer below is left in place --
+// this module's own code still assigns and reads it.
+//
+// See CryCommon/StaticModules.h for why there is only one link unit.
+#if !defined(_CRY_STATIC_MODULES)
 ISystem* GetISystem()
 {
 	return iSystem;
 }
+#endif // !_CRY_STATIC_MODULES
 
 extern "C" DLL_EXPORT IRenderer* PackageRenderConstructor(int argc, char* argv[], SCryRenderInterface *sp);
 DLL_EXPORT IRenderer* PackageRenderConstructor(int argc, char* argv[], SCryRenderInterface *sp)

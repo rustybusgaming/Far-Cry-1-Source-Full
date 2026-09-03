@@ -30,8 +30,35 @@ TOTAL                 547/547
 ```
 
 Starting point was **1/188**. Every engine module now compiles, **including the
-backend-independent renderer and Crytek's null renderer**, producing fourteen
-static libraries.
+backend-independent renderer and Crytek's null renderer**.
+
+**The engine now links and runs.** `build/Headless/Headless` is a single
+executable containing every module above, and it starts CryEngine on Crytek's
+null renderer, brings up every subsystem, and shuts down cleanly:
+
+```
+Calling CreateSystemInterface...
+File System Initialization
+Stream Engine Initialization
+Script System Initialization      <- Lua 4.1 VM, from this tree
+Network initialization
+Physics initialization
+Renderer initialization
+Init Shaders
+Console initialization
+AI initialization                 <- logs and continues; see below
+Entity system initialization
+Initializing Animation System
+Initializing 3D Engine
+Initializing Script Bindings
+
+System interface created.
+System released cleanly.
+```
+
+`ctest` covers this: `headless_boot` asserts the engine reaches
+"System interface created", not merely that it exits 0 — the engine will happily
+continue after a subsystem drops out, so exit status alone would not notice.
 
 `XRenderNULL` is the one that matters strategically. It is Crytek's own null
 renderer — 11 sources, ~2.4k lines, shipped for the dedicated server — and it
@@ -75,6 +102,18 @@ tools/triage.py --excluded
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++
 cmake --build build
+```
+
+Run the engine:
+
+```bash
+./build/Headless/Headless
+```
+
+Tests:
+
+```bash
+cd build && ctest --output-on-failure
 ```
 
 Census of what does and does not compile:
@@ -477,12 +516,90 @@ was: no drift with frequency scaling, no jump on thread migration. The unit
 becomes nanoseconds instead of cycles, which is invisible to callers because
 they only difference two readings.
 
+### Linking: many DLLs into one unit
+
+Getting from "everything compiles" to "everything links" was its own problem,
+and a different one. The engine is built as one DLL per module and wires them
+together at runtime — `LoadDLL("CryScriptSystem")` then
+`GetProcAddress("CreateScriptSystem")`. WebAssembly has no synchronous
+`dlopen`, so the whole engine has to become a single link unit.
+
+`CryCommon/StaticModules.h` replaces the lookup with a compiled-in table. The
+seam is `CryLibrary.h`, so all thirteen call sites in `SystemInit.cpp` are
+untouched: they still call `LoadDLL()` then `CryGetProcAddress()`, and still
+handle either returning `NULL`. The table is checked at compile time by
+including each module's own public header rather than re-declaring the
+factories by hand.
+
+The engine's existing `dlopen` path could not have worked in any case — it
+prefixes every library name with `getenv("MODULE_PATH")`, which nothing in the
+tree sets, so it constructed a `std::string` from `NULL` and aborted.
+
+**Three libraries were sitting in the tree unbuilt.** The CMake port had never
+compiled them, so their symbols came up undefined at the first link:
+
+- **Lua 4.1-alpha** (`CryScriptSystem/LUA`) — 60 symbols. Easy to believe
+  missing, because the files are named `lapi.c`, `lvm.c` and so on, not
+  `lua*.c`. The version matters: 4.1-alpha was never released as such, it
+  became Lua 5.0, and nothing later is API-compatible — `lua_setnativedata`,
+  `lua_getluafuncdata`, `lua_newuserdatabox` and `lua_xref` have no Lua 5
+  equivalents. Building the bundled copy is the only option that keeps the
+  semantics the game's `.lua` assets were written against.
+- **FreeType 2** (`CryFont/FreeType2`) — 12 symbols. The module set is taken
+  from Crytek's already-edited `ftmodule.h`, because `FT_Init_FreeType`
+  registers exactly what that file names.
+- **zlib / expat / md5**, done earlier for the same reason.
+
+**Once nothing was undefined, 24 symbols were defined twice** — the opposite
+problem, and the one that is genuinely inherent to collapsing the DLLs:
+
+| Duplicate | Resolution |
+|---|---|
+| `GetISystem()` × 8 | Every module carried a private copy returning the pointer to the one `CSystem` that CrySystem had already created. Collapsed onto CrySystem's; no behaviour change. |
+| `g_CpuFlags`, `g_SecondsPerCycle` | Per-DLL caches of `ISystem::GetCPUFlags()` / `GetSecondsPerCycle()`, each filled from the same `ISystem`. The renderer's copies were never written at all under the null backend, so sharing CryAnimation's can only improve on zero. |
+| `g_bProfilerEnabled` × 3 | Given to `CrySystem/FrameProfileSystem.cpp`, which owns the profiler. |
+| `GetExtension()` × 2 | **Not** merged. `CryPak.cpp` returns the *first* dot, `ResFile.cpp` the *last* — for `terrain.detail.dds`, `.detail.dds` versus `.dds`. Per-DLL linkage had kept two different functions with one name apart. CrySystem's has no callers outside its own file, so it became `static`; both keep their semantics. |
+| `CIndexedMesh::~CIndexedMesh()` × 2 | One shared class, destructor defined in both Cry3DEngine and CryAnimation. Kept Cry3DEngine's, which is the more complete of the two — CryAnimation's omits `free(m_pColorSec)`. Nothing in this drop allocates that member, so nothing was leaking. |
+| `TAnimTcbTrack<…>` × 18 | Not a DLL problem at all: these are explicit specializations defined in a header, which are **not** implicitly inline, so three of CryMovie's own TUs each emitted a strong definition. MSVC put each in its own COMDAT and folded them. Marked `inline`. |
+
+### The renderer needed one define
+
+`NULL_RENDERER` accounted for 70 undefined symbols on its own. `Common/` is not
+a shared library — it is source each backend compiles with its own defines, and
+Crytek's `XRenderNULL.vcproj` sets `NULL_RENDERER`. Without it, `Shader.h`
+declares `CPShader::mfForName` (defined only in the D3D/GL backends), and
+`TexMan.cpp`, `Renderer.cpp` and `CImage.cpp` reference the nvDXT, ATI 3Dc and
+Intel JPEG blobs — none of which can exist in a web build. `CryRenderCommon`
+and `CryRenderNULL` are now one target whose source list is generated from that
+`.vcproj` rather than guessed.
+
+### Two real bugs found while linking
+
+- `LUA/llimits.h`'s `IntPoint()` narrowed a pointer to 32 bits **before**
+  hashing it, so on a 64-bit target any two objects sharing a low half
+  collided. Now mixed at pointer width and truncated after — bit-identical on
+  32-bit.
+- `LUA/lmem.c` declared `DumpCallStack()` as plain `extern` while
+  `ScriptSystem.cpp` defines it `extern "C"`. It is a real callback out of the
+  VM: Lua's allocator calls it to print the script call stack when a request
+  fails.
+
+### CryAISystem: registered, but exports nothing
+
+The public source drop contains no `CAISystem`, `AIObject`, `AIPlayer` or
+`GoalOp` — neither headers nor implementation. The registry lists the module
+anyway, with an empty export table, and the difference is load-bearing: an
+*unregistered* module makes `CSystem::LoadDLL` call `Quit()` and kill the
+engine, whereas a *registered* one with no entry point takes the tolerant path
+`InitAISystem()` already has, logs, and continues. That is why the boot log
+above has an AI error in it and still finishes.
+
 ### Known hard blockers
 
 | Blocker | Status |
 |---|---|
 | Cg shaders (`cgGL.lib`) | binary only — full shader rewrite required |
-| Sound (`crysound.lib`) | binary only; it is **FMOD 3.61** rebranded (`CS_SAMPLE`, `CS_STREAM`, `CS_DSPUNIT`). Must be reimplemented over OpenAL/WebAudio |
+| Sound (`crysound.lib`) | binary only; it is **FMOD 3.61** rebranded (`CS_SAMPLE`, `CS_STREAM`, `CS_DSPUNIT`). Must be reimplemented over OpenAL/WebAudio. CrySoundSystem is therefore left out of the link entirely — which costs nothing today, because `CSystem::InitSound` is wrapped in `#if !defined(LINUX)` and is never called on this platform |
 | Bink video (`binkw32.dll`) | binary only — cutscenes need re-encoding |
 | Networking | browsers cannot open raw sockets; needs a WebSocket/WebRTC relay |
 | Game assets | several GB of `.pak`; a streaming problem, and only distributable to people who own the game |

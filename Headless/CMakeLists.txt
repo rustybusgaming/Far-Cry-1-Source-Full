@@ -28,7 +28,8 @@ target_include_directories(Headless PRIVATE
     ${CMAKE_SOURCE_DIR}/CryCommon
 )
 
-set(_cry_modules
+# Shared with tests/, which links the same set for test_static_modules.
+set(CRY_HEADLESS_MODULES
     CrySystem
     CryStaticModules
     CryLua
@@ -63,14 +64,16 @@ set(_cry_modules
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
     target_link_libraries(Headless PRIVATE
-        "$<LINK_GROUP:RESCAN,${_cry_modules}>")
+        "$<LINK_GROUP:RESCAN,${CRY_HEADLESS_MODULES}>")
 else()
     # LINK_GROUP arrived in 3.24. Older CMake gets the flags spelled out.
     target_link_libraries(Headless PRIVATE
-        -Wl,--start-group ${_cry_modules} -Wl,--end-group)
+        -Wl,--start-group ${CRY_HEADLESS_MODULES} -Wl,--end-group)
 endif()
 
-find_package(Threads REQUIRED)
 target_link_libraries(Headless PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
 
 message(STATUS "cry: executable Headless")
+
+# tests/ links the same module set; see tests/CMakeLists.txt.
+set(CRY_HEADLESS_MODULES "${CRY_HEADLESS_MODULES}" PARENT_SCOPE)
