@@ -2,14 +2,14 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "Network.h"
 #include "ServerSlot.h"
 #include "ClientLocal.h"
 #include <IConsole.h>									// ICVar
 
 #ifndef NOT_USE_UBICOM_SDK
-	#include "UbiSoftMemory.h"					// GS_WIN32
+	#include "UbisoftMemory.h"					// GS_WIN32
 	#include "cdkeydefines.h"						// UBI.com AUTHORIZATION_ID_SIZE
 	#include "NewUbisoftClient.h"								// NewUbisoftClient
 #else

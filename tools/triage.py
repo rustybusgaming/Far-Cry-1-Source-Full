@@ -34,7 +34,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFINES = [
     "LINUX", "LINUX64", "_LINUX",
     "NOT_USE_BINK_SDK", "NOT_USE_DIVX_SDK", "NOT_USE_PUNKBUSTER_SDK",
-    "EXCLUDE_UBICOM_CLIENT_SDK", "_CRY_WEBPORT",
+    "EXCLUDE_UBICOM_CLIENT_SDK", "NOT_USE_UBICOM_SDK", "_CRY_WEBPORT",
     "_LARGEFILE64_SOURCE", "_FILE_OFFSET_BITS=64",
 ]
 

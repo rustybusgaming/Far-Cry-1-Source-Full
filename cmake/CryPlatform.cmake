@@ -49,6 +49,12 @@ set(CRY_COMMON_DEFINES
     NOT_USE_PUNKBUSTER_SDK      # PunkBuster/ -- binary only
     EXCLUDE_UBICOM_CLIENT_SDK   # Ubisoft.com/ -- needs curl + live services
 
+    # The UBI.com matchmaking/CD-key SDK ships as lib_win32/*.lib binaries with
+    # no source and no non-Windows build, and the online services it talks to
+    # were shut down years ago. ProjectDefines.h documents NOT_USE_UBICOM_SDK
+    # as the supported way to build without it; this is precisely that case.
+    NOT_USE_UBICOM_SDK
+
     _CRY_WEBPORT               # our own guard for web-port-specific divergence
 
     # CryPak.cpp's LINUX branch uses struct stat64 / _fstat64 explicitly.

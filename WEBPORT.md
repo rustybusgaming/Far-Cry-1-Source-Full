@@ -11,31 +11,32 @@ frame yet; this is the foundation work everything else is blocked behind.
 ## Current state
 
 ```
-CryCommon headers     125/125   100.0%
+CryCommon headers     126/126   100.0%
 CrySystem sources      45/45    100.0%
 Cry3DEngine sources    73/73    100.0%
-TOTAL                 243/243
+CryEntitySystem        12/12    100.0%
+CryMovie               23/23    100.0%
+CryScriptSystem          9/9    100.0%
+CryAISystem              3/3    100.0%
+CryInput                 8/8    100.0%
+CryNetwork             26/26    100.0%
+TOTAL                 325/325
 ```
 
-Starting point was **1/188**. Three modules compile completely, the build is
-green, and `libCrySystem.a` (9.6MB) and `libCry3DEngine.a` (13.6MB) both build.
+Starting point was **1/188**. Nine modules compile completely and the build is
+green, producing eight static libraries plus the CryCommon header gate.
 
-Cry3DEngine **compiles but does not link yet, and is not meant to** — it calls
-into IRenderer, CryPhysics and CryAnimation, none of which are ported.
-Compiling is this milestone; linking waits on those.
+They **compile but do not link into a game yet, and are not meant to** — each
+calls into modules that are still unported (above all the renderer). Compiling
+is this milestone.
 
-19 further translation units are **excluded by design** — Win32-only code that
-is not a port target (the commctrl Lua debugger, `SystemWin32.cpp`, dbghelp
-stack walking, the MAPI mailer, the Win32/Xbox platform headers, and the
-overlapped-I/O streaming files). Each is listed with a reason:
+27 further translation units are **excluded by design** — Win32-only code that
+is not a port target, plus the parts of CryAISystem that are missing from the
+source drop entirely. Each carries a reason:
 
 ```bash
 tools/triage.py --excluded
 ```
-
-Counting them as failures would make the score permanently unreachable and hide
-real progress, so they are held out of the denominator rather than pretended
-away.
 
 | Pass | Fix | Total |
 |---|---|---|
@@ -50,6 +51,9 @@ away.
 | 8 | path helpers, CRT shims, find API | 154/171 |
 | 9 | render header cycle, `XmlParser` iterators | **170/170** |
 | 10 | Cry3DEngine: 225 includes, 4 root causes | **243/243** |
+| 11 | CryEntitySystem, CryMovie, CryScriptSystem, CryAISystem | **290/290** |
+| 12 | CryInput: DirectInput replaced by a browser backend | **307/307** |
+| 13 | CryNetwork: Winsock mapped to BSD sockets | **325/325** |
 
 ---
 
@@ -360,34 +364,75 @@ shaders whose `cgGL.lib` is **a binary blob with no source**. WebGL2 supports
 none of it. Every shader and the whole fixed-function/combiner pipeline needs
 rewriting to GLSL ES.
 
+### Replacing subsystems, not shimming them
+
+Two modules crossed the line from "make it compile" into "make it work
+differently", and the distinction between them is the useful part.
+
+**CryInput — replaced.** DirectInput 8 is a COM API built on device
+enumeration, acquisition and exclusive cooperative levels. Nothing in a
+browser resembles it, so `CryInput/WebInput.cpp` implements `IKeyboard` and
+`IMouse` from DOM events instead and `XKeyboard.cpp`/`XMouse.cpp` are not
+built. Everything above the device layer is untouched.
+
+Three decisions worth knowing:
+
+- Keys map from `KeyboardEvent.code`, the **physical** key, not `.key`. W-A-S-D
+  is a position, not a set of letters; with `.key` an AZERTY player's movement
+  keys would silently rebind.
+- Events are queued and drained at the frame boundary. The engine polls
+  `KeyPressed()` once per frame and expects one true per press — applying
+  events on arrival breaks that, which the tests caught.
+- Mouse capture is Pointer Lock, which unlike DirectInput can only be
+  requested from inside a user-gesture handler. `SetExclusive()` therefore
+  *requests* capture; `IsPointerLocked()` is the truth.
+
+Where Win32 behaviour cannot be reproduced, the code says so rather than
+faking it: `WaitForKey()` cannot block on the browser's event loop, keyboard
+`SetExclusive` has no equivalent, and `XKEY2ASCII` is explicitly US-layout
+because the real layout is not exposed.
+
+**CryNetwork — shimmed, and that is honest here.** Winsock is BSD sockets with
+different spellings, so `CryCommon/WinSockCompat.h` is a real mapping, not a
+fiction. It makes the module compile *and work natively*.
+
+It does **not** make it work in a browser, and no shim can. Far Cry's netcode
+is UDP throughout; a browser cannot open a UDP socket at all. Emscripten
+emulates BSD sockets over WebSockets, which gets it running but changes the
+delivery contract:
+
+| | UDP | WebSocket |
+|---|---|---|
+| Reliability | may drop | never drops — harmless, retransmit logic just idles |
+| Framing | messages | messages — harmless |
+| **Ordering** | unordered | **ordered — head-of-line blocking** |
+
+Ordering is the one that hurts. UDP delivers packet N+1 when N is lost and the
+game skips the gap; an ordered transport holds N+1 until N is retransmitted, so
+a protocol designed to degrade gracefully freezes instead — and the worse the
+connection, the worse the mismatch. A WebSocket also needs a relay to reach a
+UDP-speaking server, which this repository does not provide.
+
+`CryNetwork/WebTransport.h` is the seam for fixing that properly: a WebRTC
+DataChannel in `{ordered:false, maxRetransmits:0}` mode is genuinely
+datagram-like and is the correct destination. It costs a signalling server.
+
 ### Remaining modules
 
-Cry3DEngine took four root causes and 225 include corrections. The tooling
-generalises, so the eleven modules still unported should go the same way:
+Four left. The tooling generalises:
 
 ```bash
-tools/fix_includes.py CryCommon CryAnimation      # Win32 include spellings
-tools/triage.py --module CryAnimation             # what is left
-tools/selfcontain.py --module CryAnimation --apply # for header-heavy modules
+tools/fix_includes.py CryCommon CryAnimation
+tools/triage.py --module CryAnimation
+tools/selfcontain.py --module CryAnimation --apply
 ```
-
-`tools/triage.py` knows the include layout for every engine module; add new
-ones to its `MODULES` table.
-
-Rough order of difficulty, easiest first:
 
 | Module | LOC | Note |
 |---|---|---|
-| CryEntitySystem | 12k | mostly interface glue |
-| CryMovie | 19k | cutscene sequencer |
-| CryInput | 9k | DirectInput — needs a real replacement |
-| CryNetwork | 16k | Winsock; browsers need a WebSocket relay |
-| CryPhysics | 32k | self-contained, heavy inline asm |
+| CryPhysics | 32k | self-contained, heavy inline x86 asm |
 | CryAnimation | 35k | large, but no external SDK |
-| CryScriptSystem | 17k | bundles Lua |
 | CryFont | 50k | bundles FreeType2 |
 | CrySoundSystem | 10k | thin wrapper over the missing FMOD 3.61 binary |
-| CryAISystem | 9k | |
 | RenderDll | 253k | Milestone 4 |
 
 ### Known hard blockers
