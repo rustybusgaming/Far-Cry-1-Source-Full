@@ -26,7 +26,7 @@
 
 #include <IRenderer.h>
 
-#include <I3dengine.h>
+#include <I3DEngine.h>
 #include <ILog.h>
 #include <ITimer.h>
 #include <ISystem.h>
@@ -39,7 +39,7 @@ static char THIS_FILE[] = __FILE__;
 #endif
 
 /*
-#include "..\cry3dengine\statobj.h"
+#include "../Cry3DEngine/StatObj.h"
 #include "file.h"
 */
 

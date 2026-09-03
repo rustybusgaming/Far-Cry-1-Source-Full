@@ -19,7 +19,7 @@
 #include <I3DEngine.h>
 #include <ILog.h>
 #include <IRenderer.h>
-#include "itimer.h"
+#include "ITimer.h"
 //#include "list2.h"
 
 #if defined(_DEBUG) && !defined(LINUX)
@@ -32,7 +32,9 @@ bool CEntity::DrawEntity(const SRendParams & _EntDrawParams)
 {
 	FUNCTION_PROFILER( m_pISystem,PROFILE_3DENGINE );
 
-  int nRecursionLevel = (int)m_pISystem->GetIRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
+  // [webport] EF_Query returns void* carrying an integer for scalar queries;
+  // cast via INT_PTR so it is not truncated on 64-bit. See Timer.cpp.
+  int nRecursionLevel = (int)(INT_PTR)m_pISystem->GetIRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
 
 	if(nRecursionLevel==0)
 	{ // movement detection (if no recursion)

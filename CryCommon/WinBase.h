@@ -61,6 +61,7 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <signal.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <fnmatch.h>
@@ -608,6 +609,20 @@ inline BOOL SetFileAttributes(const char* lpFileName, DWORD dwAttributes)
 // Diagnostics
 //////////////////////////////////////////////////////////////////////////
 inline void OutputDebugString(const char* s) { fputs(s, stderr); }
+
+// Win32's debugger trap. raise(SIGTRAP) is the POSIX equivalent and stops in
+// a debugger when one is attached; without one it terminates, which matches
+// Win32 behaviour for an unhandled breakpoint. Under Emscripten there is no
+// signal to raise, and __builtin_trap() compiles to a wasm "unreachable",
+// which is what a debugger break becomes there.
+inline void DebugBreak()
+{
+#if defined(CRY_WASM)
+	__builtin_trap();
+#else
+	raise(SIGTRAP);
+#endif
+}
 inline DWORD GetLastError() { return (DWORD)errno; }
 inline void  SetLastError(DWORD e) { errno = (int)e; }
 

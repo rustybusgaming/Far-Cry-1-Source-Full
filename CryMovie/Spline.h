@@ -12,6 +12,10 @@
 //  History:
 //
 ////////////////////////////////////////////////////////////////////////////
+// [webport] Not self-contained: fast_fmod() below calls cry_fmod, which is
+// declared in Cry_Math.h. This header included nothing for it.
+#include "Cry_Math.h"
+
 
 #ifndef __spline_h__
 #define __spline_h__
@@ -281,7 +285,8 @@ Archive&	operator >> ( Archive& ar,TSpline<T,Basis> &curve )	{
 	curve.ORT( n );
 	ar >> n;	// Load num keys.
 	while (n-- > 0)	{ 
-		TSpline<T,Basis>::key_type k;
+		// [webport] dependent type needs typename
+		typename TSpline<T,Basis>::key_type k;
 		ar >> k;	// Load key.
 		curve.push_back( k );
 	}
@@ -334,35 +339,52 @@ private:
 	virtual	void comp2KeyDeriv();
 };
 
+// [webport] Every member call in the out-of-line TCBSpline<T> definitions below
+// is qualified with this->.
+//
+// TCBSpline derives from TSpline<TCBSplineKey<T>,HermitBasis>, a DEPENDENT base,
+// so under two-phase lookup an unqualified inherited name is not visible at
+// template-definition time. MSVC 7.1 deferred all name lookup to instantiation
+// and found them.
+//
+// time() is the dangerous one: with <time.h> in scope, an unqualified time(n)
+// is not an error at definition -- it binds to the global ::time. Qualifying it
+// makes the member call explicit rather than relying on which name wins.
 template	<class T>
 inline	void TCBSpline<T>::compMiddleDeriv( int curr )	{
 	float	dsA,dsB,ddA,ddB;
 	float	A,B,cont1,cont2;
-	int last = num_keys() - 1;
+	// [webport] TCBSpline derives from TSpline<...>, a DEPENDENT base, so an
+	// unqualified num_keys() is not found at template-definition time. MSVC 7.1
+	// deferred the lookup to instantiation; clang requires this->.
+	int last = this->num_keys() - 1;
 
 	// dsAdjust,ddAdjust apply speed correction when continuity is 0.
 	// Middle key.
 	if (curr == 0)	{
 		// First key.
-		float dts = (GetRangeEnd() - time(last)) + (time(0) - GetRangeStart());
-		float dt = 2.0f / (dts + time(1) - time(0));
+		float dts = (this->GetRangeEnd() - this->time(last)) + (this->time(0) - this->GetRangeStart());
+		float dt = 2.0f / (dts + this->time(1) - this->time(0));
 		dsA = dt * dts;
-		ddA = dt * (time(1) - time(0));
+		ddA = dt * (this->time(1) - this->time(0));
 	}	else	{
 		if (curr == last)	{
 			// Last key.
-			float dts = (GetRangeEnd() - time(last)) + (time(0) - GetRangeStart());
-			float dt = 2.0f / (dts + time(last) - time(last-1));
+			float dts = (this->GetRangeEnd() - this->time(last)) + (this->time(0) - this->GetRangeStart());
+			float dt = 2.0f / (dts + this->time(last) - this->time(last-1));
 			dsA = dt * dts;
-			ddA = dt * (time(last) - time(last-1));
+			ddA = dt * (this->time(last) - this->time(last-1));
 		}	else	{
 			// Middle key.
-			float dt = 2.0f/(time(curr+1) - time(curr-1));
-			dsA = dt * (time(curr) - time(curr-1));
-			ddA = dt * (time(curr+1) - time(curr));
+			float dt = 2.0f/(this->time(curr+1) - this->time(curr-1));
+			dsA = dt * (this->time(curr) - this->time(curr-1));
+			ddA = dt * (this->time(curr+1) - this->time(curr));
 		}
 	}
-	key_type &k = key(curr);
+	// [webport] key_type is a typedef in the DEPENDENT base TSpline<...>, so it
+	// needs a typename-qualified name; unqualified, clang does not see it at
+	// definition time (and its typo correction cheerfully offered 'pe_type').
+	typename TCBSpline<T>::key_type &k = this->key(curr);
 
 	float c = (float)fabs(k.cont);
 	float sa = dsA + c*(1.0f - dsA);
@@ -382,32 +404,32 @@ inline	void TCBSpline<T>::compMiddleDeriv( int curr )	{
 	ddB = da * B * cont1;
 
 	T qp,qn;
-	if (curr > 0) qp = value(curr-1);	else qp = value(last);
-	if (curr < last) qn = value(curr+1); else qn = value(0);
+	if (curr > 0) qp = this->value(curr-1);	else qp = this->value(last);
+	if (curr < last) qn = this->value(curr+1); else qn = this->value(0);
 	k.ds = dsA*(k.value - qp) + dsB*(qn - k.value);
 	k.dd = ddA*(k.value - qp) + ddB*(qn - k.value);
 }
 
 template	<class T>
 inline	void TCBSpline<T>::compFirstDeriv()	{
-	key_type &k = key(0);
+	typename TCBSpline<T>::key_type &k = this->key(0);
 	Zero(k.ds);
-	k.dd = 0.5f*(1.0f - k.tens)*( 3.0f*(value(1) - k.value) - ds(1));
+	k.dd = 0.5f*(1.0f - k.tens)*( 3.0f*(this->value(1) - k.value) - this->ds(1));
 }
 
 template	<class T>
 inline	void TCBSpline<T>::compLastDeriv()	{
-	int last = num_keys() - 1;
-	key_type &k = key(last);
-	k.ds = -0.5f*(1.0f - k.tens)*( 3.0f*(value(last-1) - k.value) + dd(last-1) );
+	int last = this->num_keys() - 1;
+	typename TCBSpline<T>::key_type &k = this->key(last);
+	k.ds = -0.5f*(1.0f - k.tens)*( 3.0f*(this->value(last-1) - k.value) + this->dd(last-1) );
 	Zero(k.dd);
 }
 
 template	<class T>
 inline	void TCBSpline<T>::comp2KeyDeriv()	{
-	key_type &k1 = key(0);
-	key_type &k2 = key(1);
-	value_type val = value(1) - value(0);
+	typename TCBSpline<T>::key_type &k1 = this->key(0);
+	typename TCBSpline<T>::key_type &k2 = this->key(1);
+	typename TCBSpline<T>::value_type val = this->value(1) - this->value(0);
 	
 	Zero(k1.ds);
 	k1.dd = (1.0f - k1.tens)*val;
@@ -417,25 +439,26 @@ inline	void TCBSpline<T>::comp2KeyDeriv()	{
 
 template	<class T>
 inline	void	TCBSpline<T>::comp_deriv() 	{
-	if (num_keys() > 1)	{
-		if ((num_keys() == 2) && !closed())	{
+	if (this->num_keys() > 1)	{
+		if ((this->num_keys() == 2) && !this->closed())	{
 			comp2KeyDeriv();
 			return;
 		}
-		if (closed()) {
-			for (int i = 0; i < num_keys(); ++i)	{
+		if (this->closed()) {
+			for (int i = 0; i < this->num_keys(); ++i)	{
 				compMiddleDeriv( i );
 			}
 		}	else	{
-			for (int i = 1; i < (num_keys()-1); ++i)	{
+			for (int i = 1; i < (this->num_keys()-1); ++i)	{
 				compMiddleDeriv( i );
 			}
 			compFirstDeriv();
 			compLastDeriv();
 		}
 	}
-	m_curr = 0;
-	m_flags &= ~MODIFIED;	// clear MODIFIED flag.
+	this->m_curr = 0;
+	// [webport] MODIFIED is an enumerator of the dependent base, so it needs
+	this->m_flags &= ~TCBSpline<T>::MODIFIED;	// clear MODIFIED flag.
 }
 
 template	<class T>
@@ -466,12 +489,13 @@ inline	float	TCBSpline<T>::calc_ease( float t,float a,float b )	{
 template <class T>
 inline	void	TCBSpline<T>::interp_keys( int from,int to,float u,T& val )
 {
-	u = calc_ease( u,key(from).easefrom,key(to).easeto );
-	basis_type basis( u );
+	u = calc_ease( u,this->key(from).easefrom,this->key(to).easeto );
+	// [webport] basis_type is a dependent typedef from TSpline<...>.
+	typename TCBSpline<T>::basis_type basis( u );
 
 	// Changed by Sergiy&Ivo
 	//val = (basis[0]*value(from)) + (basis[1]*value(to)) + (basis[2]*dd(from)) + (basis[3]*ds(to));
-	val = Concatenate( Concatenate( Concatenate( (basis[0]*value(from)) , (basis[1]*value(to))) , (basis[2]*dd(from))) , (basis[3]*ds(to)));
+	val = Concatenate( Concatenate( Concatenate( (basis[0]*this->value(from)) , (basis[1]*this->value(to))) , (basis[2]*this->dd(from))) , (basis[3]*this->ds(to)));
 
 }
 
@@ -519,51 +543,52 @@ inline	void	TCBQuatSpline::interpolate( float tm,value_type& val )
 	if (empty()) return;
 
 	float t = tm;
-	int last = num_keys() - 1;
+	int last = this->num_keys() - 1;
 
-	if (m_flags&MODIFIED)	comp_deriv();
+	if (this->m_flags&MODIFIED)	comp_deriv();
 
-	if (t < time(0))	{	// Before first key.
-		val = value(0);
+	if (t < this->time(0))	{	// Before first key.
+		val = this->value(0);
 		return;
 	}
 
 	if (isORT(ORT_CYCLE) || isORT(ORT_LOOP))	{
 		// Warp time.
-		float endtime = time(last);
+		float endtime = this->time(last);
 		//t = t - floor(t/endtime)*endtime;
 		t = fast_fmod( t,endtime );
 	}
 	int curr = seek_key( t );
 	if (curr < last)	{
-		t = (t - time(curr))/(time(curr+1) - time(curr));
+		t = (t - this->time(curr))/(this->time(curr+1) - this->time(curr));
 		if (t >= 0)	{
 			// Call actual interpolation function.
 			interp_keys( curr,curr+1,t,val );
 		}
 	}	else	{
-		val = value(last);
+		val = this->value(last);
 	}
 }
 
 inline	void	TCBQuatSpline::interp_keys( int from,int to,float u,value_type& val ) {
-	u = calc_ease( u,key(from).easefrom,key(to).easeto );
+	u = calc_ease( u,this->key(from).easefrom,this->key(to).easeto );
 	basis_type basis( u );
 	//val = SquadRev( angle(to),axis(to), value(from), dd(from), ds(to), value(to), u );
-	val = Squad( value(from), dd(from), ds(to), value(to), u );
+	val = Squad( this->value(from), this->dd(from), this->ds(to), this->value(to), u );
 	val = GetNormalized(val);	// Normalize quaternion.
 }
 
 inline	void TCBQuatSpline::comp_deriv()
 {
-	if (num_keys() > 1)
+	if (this->num_keys() > 1)
 	{
-		for (int i = 0; i < num_keys(); ++i)	{
+		for (int i = 0; i < this->num_keys(); ++i)	{
 			compMiddleDeriv( i );
 		}
 	}
-	m_curr = 0;
-	m_flags &= ~MODIFIED;	// clear MODIFIED flag.
+	this->m_curr = 0;
+	// [webport] MODIFIED is an enumerator of the dependent base, so it needs
+	this->m_flags &= ~MODIFIED;	// clear MODIFIED flag.
 }
 
 #define	M_2PI		(2.0f*3.14159f - 0.00001f)
@@ -571,52 +596,52 @@ inline	void TCBQuatSpline::compMiddleDeriv( int curr )
 {
 	Quat  qp,qm;	
 	float fp,fn;
-	int last = num_keys() - 1;
+	int last = this->num_keys() - 1;
 	
-	if (curr > 0 || closed())
+	if (curr > 0 || this->closed())
 	{
 		int prev = (curr != 0) ? curr - 1 : last;
-		qm = value(prev);
-		if ( (qm|value(curr)) < 0.0f) qm = -qm;
-		qm = LnDif( qm,value(curr) );
+		qm = this->value(prev);
+		if ( (qm|this->value(curr)) < 0.0f) qm = -qm;
+		qm = LnDif( qm,this->value(curr) );
 	}
 
-	if (curr < last || closed())
+	if (curr < last || this->closed())
 	{
 		int next = (curr != last) ? curr + 1 : 0;
-		Quat qnext = value(next);
-		if ((qnext|value(curr)) < 0.0f) qnext = -qnext;
-		qp = value(curr);
+		Quat qnext = this->value(next);
+		if ((qnext|this->value(curr)) < 0.0f) qnext = -qnext;
+		qp = this->value(curr);
 		qp = LnDif( qp,qnext );
 	}
 
-	if (curr == 0 && !closed())   qm = qp;
-	if (curr == last && !closed()) qp = qm;
+	if (curr == 0 && !this->closed())   qm = qp;
+	if (curr == last && !this->closed()) qp = qm;
 
-	key_type &k = key(curr);
+	key_type &k = this->key(curr);
 	float c = (float)fabs(k.cont);
 
 	fp = fn = 1.0f;
-	if ((curr > 0 && curr < last) || closed())
+	if ((curr > 0 && curr < last) || this->closed())
 	{
 		if (curr == 0)	{
 			// First key.
-			float dts = (GetRangeEnd() - time(last)) + (time(0) - GetRangeStart());
-			float dt = 2.0f / (dts + time(1) - time(0));
+			float dts = (this->GetRangeEnd() - this->time(last)) + (this->time(0) - this->GetRangeStart());
+			float dt = 2.0f / (dts + this->time(1) - this->time(0));
 			fp = dt * dts;
-			fn = dt * (time(1) - time(0));
+			fn = dt * (this->time(1) - this->time(0));
 		}	else	{
 			if (curr == last)	{
 				// Last key.
-				float dts = (GetRangeEnd() - time(last)) + (time(0) - GetRangeStart());
-				float dt = 2.0f / (dts + time(last) - time(last-1));
+				float dts = (this->GetRangeEnd() - this->time(last)) + (this->time(0) - this->GetRangeStart());
+				float dt = 2.0f / (dts + this->time(last) - this->time(last-1));
 				fp = dt * dts;
-				fn = dt * (time(last) - time(last-1));
+				fn = dt * (this->time(last) - this->time(last-1));
 			}	else	{
 				// Middle key.
-				float dt = 2.0f/(time(curr+1) - time(curr-1));
-				fp = dt * (time(curr) - time(curr-1));
-				fn = dt * (time(curr+1) - time(curr));
+				float dt = 2.0f/(this->time(curr+1) - this->time(curr-1));
+				fp = dt * (this->time(curr) - this->time(curr-1));
+				fn = dt * (this->time(curr+1) - this->time(curr));
 			}
 		}
 		fp += c - c*fp;
@@ -643,8 +668,8 @@ inline	void TCBQuatSpline::compMiddleDeriv( int curr )
 	qb = exp(qb);
 	
 	// ds = qb, dd = qa.
-	k.ds = value(curr) * qb;
-	k.dd = value(curr) * qa;
+	k.ds = this->value(curr) * qb;
+	k.dd = this->value(curr) * qa;
 }
 
 #endif // __spline_h__

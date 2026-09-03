@@ -153,6 +153,17 @@ EXCLUDED = {
     # a sibling inside the CryPhysics module, so it is that module's header,
     # not a CryCommon interface, and belongs to the CryPhysics port.
     "CryCommon/CryPhysics.h": "stale duplicate of CryPhysics/CryPhysics.h",
+
+    # CryAISystem is INCOMPLETE in this source drop. The core AI classes --
+    # CAISystem, AIObject, AIPlayer and GoalOp -- are absent entirely, headers
+    # AND sources; only the graph/pathfinding helpers survive. These five TUs
+    # include those missing headers, so no amount of porting can build them.
+    # This is a gap upstream, not a port problem.
+    "CryAISystem/Graph.cpp":        "needs CAISystem.h, absent from this drop",
+    "CryAISystem/GraphUtility.cpp": "needs CAISystem.h, absent from this drop",
+    "CryAISystem/Heuristic.cpp":    "needs AIObject.h, absent from this drop",
+    "CryAISystem/PipeUser.cpp":     "needs CAISystem.h, absent from this drop",
+    "CryAISystem/Puppet.cpp":       "needs CAISystem.h, absent from this drop",
 }
 
 
@@ -233,13 +244,13 @@ MODULES = {
     "CryAnimation":{"kind": "sources", "incs": []},
     "CryEntitySystem": {"kind": "sources", "incs": []},
     "CryPhysics":  {"kind": "sources", "incs": []},
-    "CryMovie":    {"kind": "sources", "incs": []},
+    "CryMovie":    {"kind": "sources", "incs": ["xml", "xml/Expat"]},
     "CryFont":     {"kind": "sources", "incs": ["FreeType2/include"]},
     "CryInput":    {"kind": "sources", "incs": []},
     "CryNetwork":  {"kind": "sources", "incs": []},
     "CryAISystem": {"kind": "sources", "incs": []},
     "CrySoundSystem": {"kind": "sources", "incs": []},
-    "CryScriptSystem": {"kind": "sources", "incs": []},
+    "CryScriptSystem": {"kind": "sources", "incs": ["LUA", "LUA/lib"]},
 }
 
 

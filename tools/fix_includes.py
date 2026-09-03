@@ -41,19 +41,37 @@ ANGLE_RE = re.compile(r'^(\s*#\s*include\s*)<([^>]+)>(.*)$')
 
 
 def build_index(dirs):
-    """lowercased relative path -> actual relative path, for every header."""
+    """{module root: {lowercased path -> actual path}}.
+
+    Indexed PER ROOT rather than globally. Several modules ship their own
+    StdAfx.h with different capitalisation (CryEntitySystem/stdafx.h vs
+    CryMovie/StdAfx.h); a single shared index lets one module's spelling
+    shadow another's, so CryMovie/xml/xml.cpp would "resolve" against
+    CryEntitySystem's copy and be left alone. Includes are resolved against
+    the including file's own module first.
+    """
     index = {}
     for d in dirs:
+        per = {}
         for dirpath, _, files in os.walk(d):
             for fn in files:
                 if not fn.lower().endswith((".h", ".hpp", ".inl", ".c", ".cpp")):
                     continue
-                full = os.path.join(dirpath, fn)
-                rel = os.path.relpath(full, d).replace(os.sep, "/")
-                index.setdefault(rel.lower(), rel)
-                # also index by bare filename, for includes that rely on -I
-                index.setdefault(fn.lower(), fn)
+                rel = os.path.relpath(os.path.join(dirpath, fn), d).replace(os.sep, "/")
+                per.setdefault(rel.lower(), rel)
+                per.setdefault(fn.lower(), fn)
+        index[d] = per
     return index
+
+
+def lookup(index, srcdir, key):
+    """Search the including file's own module root first, then the others."""
+    own = [d for d in index if srcdir == d or srcdir.startswith(d + os.sep)]
+    for d in own + [d for d in index if d not in own]:
+        hit = index[d].get(key)
+        if hit:
+            return hit
+    return None
 
 
 def walk_case_insensitive(base, relpath):
@@ -109,16 +127,17 @@ def resolve(spec, index, srcdir):
     if fixed:
         return fixed if fixed != spec else None
 
-    # Project-wide index, full relative path.
+    # Module index, full relative path -- own module first.
     key = norm.lower()
-    if key in index and index[key] != spec:
-        return index[key]
+    hit = lookup(index, srcdir, key)
+    if hit and hit != spec:
+        return hit
 
     # Last resort: bare filename (loses directory structure, so only used
     # when nothing else resolved).
-    base = key.rsplit("/", 1)[-1]
-    if base in index and index[base] != spec:
-        return index[base]
+    hit = lookup(index, srcdir, key.rsplit("/", 1)[-1])
+    if hit and hit != spec:
+        return hit
 
     if norm != spec:
         return norm          # at minimum, fix the separator
@@ -162,7 +181,8 @@ def main():
                         # under a different spelling. Anything that resolves as
                         # written, or that we have no file for, is left alone.
                         key = spec.replace("\\", "/").lower()
-                        cand = index.get(key) or index.get(key.rsplit("/", 1)[-1])
+                        cand = (lookup(index, dirpath, key)
+                                or lookup(index, dirpath, key.rsplit("/", 1)[-1]))
                         fixed = cand if (cand and cand != spec) else None
                     else:
                         fixed = resolve(spec, index, dirpath)

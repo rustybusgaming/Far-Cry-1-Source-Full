@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "Entity.h"
 #include "EntitySystem.h"
-#include <stream.h>
+#include <Stream.h>
 #include <IScriptSystem.h>
 #include <ITimer.h>
 #include <ILog.h>
@@ -415,7 +415,10 @@ bool CEntity::Read(CStream& stm,bool bNoUpdate)
 				Vec3d vPos;
 //			_VERIFY(stm.Read(vPos));
 #if defined(LINUX)
-				_VERIFY(stm.ReadPkd(*(IStreamData*)(&CStreamData_WorldPos(vPos))));
+				// [webport] Address of a temporary; a named local has the same
+				// lifetime requirements and is valid.
+				CStreamData_WorldPos worldPos(vPos);
+				_VERIFY(stm.ReadPkd(*(IStreamData*)(&worldPos)));
 #else
 				_VERIFY(stm.ReadPkd(CStreamData_WorldPos(vPos)));
 #endif

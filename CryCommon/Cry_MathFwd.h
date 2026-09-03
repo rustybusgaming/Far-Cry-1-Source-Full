@@ -39,6 +39,14 @@
 #	endif
 #endif
 
+// isneg() is defined in Cry_Math.h at ~line 317, but Cry_Vector3.h -- which
+// Cry_Math.h includes at line 272 -- already calls it from GetOrthogonal().
+// The call is non-dependent and its argument is a fundamental type, so ADL
+// cannot find it; it has to be visible at the point of definition. Same class
+// of problem as Snap_s180.
+inline int isneg(double x);
+inline int isneg(float x);
+
 template <class F> struct Vec2_tpl;
 template <class F> struct Vec3_tpl;
 template <class F> struct Ang3_tpl;

@@ -26,7 +26,13 @@
 #include "MaterialNode.h"
 
 #include <ISystem.h>
+// [webport] <io.h> is the MSVC low-level I/O header; on POSIX the equivalent
+// declarations live in <unistd.h>.
+#if defined(WIN32) && !defined(LINUX)
 #include <io.h>
+#else
+#include <unistd.h>
+#endif
 #include <ILog.h>
 #include <IConsole.h>
 #include <ITimer.h>
@@ -59,7 +65,10 @@ bool CMovieSystem::Load(const char *pszFile, const char *pszMission)
 	XmlNodeRef rootNode = m_system->LoadXmlFile(pszFile);
 	if (!rootNode)
 		return false;
-	XmlNodeRef Node=NULL;
+	// [webport] NULL is 0L, which converts equally well to XmlNodeRef's
+	// int-taking and IXmlNode*-taking constructors, so the initialisation is
+	// ambiguous. The default constructor already sets the pointer to NULL.
+	XmlNodeRef Node;
 	for (int i=0;i<rootNode->getChildCount();i++)
 	{
 		XmlNodeRef missionNode=rootNode->getChild(i);
@@ -663,7 +672,12 @@ void CMovieSystem::Serialize( XmlNodeRef &xmlNode,bool bLoading,bool bRemoveOldN
 		{
 			for (int i=0;i<seqNode->getChildCount();i++)
 			{
-				if (!LoadSequence(seqNode->getChild(i), bLoadEmpty))
+				// [webport] LoadSequence takes a non-const XmlNodeRef&, and
+				// getChild() returns a temporary. Binding a temporary to a
+				// non-const reference is an MSVC extension, not standard C++.
+				// A named local has the same lifetime across the call.
+				XmlNodeRef childNode = seqNode->getChild(i);
+				if (!LoadSequence(childNode, bLoadEmpty))
 					return;
 			}
 		}

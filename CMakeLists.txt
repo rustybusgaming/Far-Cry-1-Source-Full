@@ -48,6 +48,10 @@ option(CRY_HEADER_PARSE_GATE
 add_subdirectory(CryCommon)
 add_subdirectory(CrySystem)
 add_subdirectory(Cry3DEngine)
+add_subdirectory(CryEntitySystem)
+add_subdirectory(CryMovie)
+add_subdirectory(CryScriptSystem)
+add_subdirectory(CryAISystem)
 
 # Tests for the port's own code (WinBase.h and friends).
 enable_testing()
