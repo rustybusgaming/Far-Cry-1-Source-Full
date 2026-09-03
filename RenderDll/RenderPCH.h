@@ -67,9 +67,13 @@ typedef unsigned char BYTE;
 
 #include <platform.h>
 
-#ifdef LINUX
-#include <asm/msr.h>
-#endif
+// [webport] Was "#include <asm/msr.h>", the Linux KERNEL header that defines
+// rdtscl() for reading the time-stamp counter from ring 0. It is not part of
+// any userspace API, so this include never resolved for a userspace build even
+// on native Linux -- and it does not exist at all outside x86.
+//
+// sCycles()/sCycles2() below no longer call rdtscl(); they use CLOCK_MONOTONIC.
+// Nothing else in this header wanted the file.
 
 #if defined(_AMD64_) && !defined(LINUX)
 #include <io.h>

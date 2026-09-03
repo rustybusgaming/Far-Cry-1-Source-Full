@@ -5,20 +5,9 @@
 # proved they fit together. This target links them and runs CrySystem against
 # Crytek's own null renderer.
 #
-# WHY THE LINK NEEDS HELP
-#
-# The engine was built as one DLL per module, so the modules were free to
-# reference each other in a cycle -- CrySystem calls into Cry3DEngine, which
-# calls back into CrySystem -- and the dynamic loader resolved it at runtime.
-# Static archives have no such luxury: ld walks the link line once, left to
-# right, and an archive it has already passed will not be revisited. The
-# cycles are real and there is no ordering that satisfies them all, so the
-# whole module set is wrapped in a LINK_GROUP (--start-group/--end-group),
-# which tells the linker to keep re-scanning until nothing new resolves.
-#
-# This is not a workaround for a mistake in the port; it is the standard answer
-# for mutually recursive static libraries, and it is what the single-link-unit
-# wasm build needs anyway.
+# The modules reference each other in cycles, which was free when each was its
+# own DLL and is not free as static archives. cry_link_module_group() handles
+# that; see cmake/CryModule.cmake for why, and why wasm needs the opposite.
 ################################################################################
 
 add_executable(Headless HeadlessMain.cpp)
@@ -62,14 +51,7 @@ set(CRY_HEADLESS_MODULES
     CryVendor
 )
 
-if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
-    target_link_libraries(Headless PRIVATE
-        "$<LINK_GROUP:RESCAN,${CRY_HEADLESS_MODULES}>")
-else()
-    # LINK_GROUP arrived in 3.24. Older CMake gets the flags spelled out.
-    target_link_libraries(Headless PRIVATE
-        -Wl,--start-group ${CRY_HEADLESS_MODULES} -Wl,--end-group)
-endif()
+cry_link_module_group(Headless ${CRY_HEADLESS_MODULES})
 
 target_link_libraries(Headless PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
 

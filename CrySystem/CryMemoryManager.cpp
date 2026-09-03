@@ -106,6 +106,19 @@ int clearstats() { for(int i = 0; i<MAXSTAT; i++) stats[i] = 0; return 0; };
 static int foo = clearstats();
 */
 
+// [webport] PAGESIZE is a POSIX macro, and Emscripten's <limits.h> defines it
+// (as 65536, wasm's real page size). That turns the enumerator below into
+// "enum { 65536 = 4096 }".
+//
+// The collision is only in the name. This allocator's PAGESIZE is its own
+// bucket granularity -- the size of the chunks it hands out and reference
+// counts -- not the operating system's page size, so 4096 stays 4096 and the
+// allocator behaves identically. Undefining the macro is safe here because
+// nothing in this file wants the POSIX meaning.
+#ifdef PAGESIZE
+#undef PAGESIZE
+#endif
+
 class PageBucketAllocator
 {
 	/*

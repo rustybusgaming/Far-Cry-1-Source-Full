@@ -194,7 +194,12 @@ typedef struct in_addr_windows
 #define __TIMESTAMP__ __DATE__" "__TIME__
 
 // function renaming
-#define _finite __finite
+// [webport] Was "#define _finite __finite". __finite is a glibc INTERNAL
+// symbol -- the reserved-name alias behind finite() -- and musl, which is what
+// Emscripten's libc is, does not provide it. isfinite() is the C99 standard
+// spelling, is a macro in <math.h>, and works on every libc including glibc,
+// so this is strictly more portable rather than a wasm special case.
+#define _finite isfinite
 #define _snprintf snprintf
 #define _isnan isnan
 #define stricmp strcasecmp
@@ -341,6 +346,21 @@ typedef struct _SECURITY_ATTRIBUTES
 #if defined(LINUX64)
 		//treat __null tyope also as invalid handle type
 		CHandle(typeof(__null)) : m_Value(U){}//to be able to use a common value for all InvalidHandle - types
+#endif
+#if defined(__EMSCRIPTEN__)
+		// [webport] The same idea as the LINUX64 constructor above, for the way
+		// this libc spells NULL.
+		//
+		// Emscripten's headers define NULL as 0L rather than as __null, so a
+		// plain "handle = NULL" offers a long, which converts equally well to
+		// HandleType (int) and to PointerType (void*, since 0L is still a null
+		// pointer constant). Ambiguous, at every such assignment.
+		//
+		// A long constructor is an exact match and settles it. The LINUX64 one
+		// cannot be reused here: typeof(__null) is int on wasm32, which is
+		// exactly HandleType for the only instantiation there is
+		// (CHandle<int,-1>), so declaring it would redeclare CHandle(HandleType).
+		CHandle(long) : m_Value(U){}
 #endif
 		operator HandleType(){return m_Value;}
 		bool operator!() const{return m_Value == sciInvalidHandleValue;}

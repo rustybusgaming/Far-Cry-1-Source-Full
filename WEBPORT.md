@@ -60,6 +60,22 @@ System released cleanly.
 "System interface created", not merely that it exits 0 — the engine will happily
 continue after a subsystem drops out, so exit status alone would not notice.
 
+**And it runs in WebAssembly.** The same target builds with `emcmake` and runs
+under Node (and in a browser), producing a byte-for-byte identical boot log
+apart from pak paths and the hostname:
+
+```
+$ node build-wasm/Headless/Headless.js
+...
+Initializing Script Bindings
+
+System interface created.
+System released cleanly.
+```
+
+All four tests pass under wasm as well — CMake runs them through Node
+automatically. `Headless.wasm` is 9.2 MB against the native binary's 11.9 MB.
+
 `XRenderNULL` is the one that matters strategically. It is Crytek's own null
 renderer — 11 sources, ~2.4k lines, shipped for the dedicated server — and it
 implements the full `IRenderer` interface while drawing nothing. It is what
@@ -124,13 +140,17 @@ tools/triage.py --show "windows.h missing"   # real diagnostics for one category
 tools/triage.py --json out.json
 ```
 
-The wasm target is wired but not yet the working target — see
-*Why native clang first* below.
+WebAssembly:
 
 ```bash
 source /path/to/emsdk/emsdk_env.sh
 emcmake cmake -S . -B build-wasm -G Ninja
+cmake --build build-wasm
+node build-wasm/Headless/Headless.js
+cd build-wasm && ctest          # runs the same four tests through Node
 ```
+
+Built and tested against Emscripten 6.0.9.
 
 ---
 
@@ -593,6 +613,90 @@ anyway, with an empty export table, and the difference is load-bearing: an
 engine, whereas a *registered* one with no entry point takes the tolerant path
 `InitAISystem()` already has, logs, and continues. That is why the boot log
 above has an AI error in it and still finishes.
+
+### Getting to wasm
+
+Doing native clang first paid off exactly as intended: of 547 translation
+units, **only 14 failed to compile for wasm**, and the whole port took one
+sitting. The failures fell into two groups.
+
+**wasm32 is a 32-bit target, and the tree only knew two shapes.** The port had
+been defining `LINUX64` for wasm, which is wrong in a way that would have caused
+silent corruption rather than a build failure: `Linux64Specific.h` types
+`DWORD_PTR` as `uint64` while `LONG_PTR` stays `long`, so on wasm32 the two
+disagree with each other and with the 4-byte pointers they are meant to hold.
+Switching to `LINUX32` fixed that — but `LINUX32` also implied `_CPU_X86`, and
+wasm is 32-bit *without* being x86, so that had to be separated too.
+
+That change then exposed a pattern repeated in four places: guards written as
+`#if defined(LINUX64)` that actually mean **"`intptr_t` is a distinct type from
+`int`"**. The two conditions coincide on x86 (on x86-32 `intptr_t` *is* `int`,
+so the extra overload would collide) but come apart on wasm32, where pointers
+are four bytes yet `intptr_t` is `long` — same width as `int`, different type.
+Each site needed the overload the 64-bit guard was withholding:
+
+| Site | Symptom |
+|---|---|
+| `IScriptSystem.h` `GetParam(int, INT_PTR&)` | no viable overload for `CryEngineDecalInfo::nPartID` |
+| `Cry_Math.h` `iszero(intptr_t)` | ambiguous in CryPhysics' branchless pointer arithmetic |
+| `smartptr.h`, `LinuxSpecific.h` `CHandle` | see below |
+
+The `GetParam` guard was three separate copies of the same `#if` that had to
+agree — declaration in the interface, declaration in the implementation,
+definition — and they didn't. It is now one named macro,
+`CRY_SCRIPT_HAS_INT_PTR_PARAM`.
+
+**`NULL` is `0L` here.** Emscripten's headers define `NULL` as `0L` rather than
+as `__null`. That makes it a `long`, which converts equally badly to `int` and
+to a pointer, so every `smartPtr != NULL` and `handle = NULL` in the engine
+became ambiguous. `_smart_ptr` and `CHandle` gained `long` overloads. (The
+existing `typeof(__null)` overloads could not be reused: `typeof(__null)` is
+`int` on wasm32, which is exactly `CHandle<int,-1>`'s handle type.)
+
+**glibc-isms and one kernel header.** `_finite` was `#define`d to `__finite`, a
+glibc *internal* symbol that musl does not have — `isfinite` is the C99 spelling
+and works everywhere. `MTSafeAllocator` called `std::_Construct` and
+`std::_Destroy`, which are libstdc++ internals with no libc++ equivalent; they
+are placement new and an explicit destructor call, now written as such. And in
+six files `<io.h>` had been "translated" to `<sys/io.h>` — which is not the
+POSIX counterpart of Windows' low-level file header but the **x86 port-I/O**
+header declaring `inb`/`outb`. Nothing used those; the right header is
+`<unistd.h>`.
+
+Two more worth naming:
+
+- `std::map`'s allocator must have `value_type` `pair<const Key, T>`.
+  `CryPak.h` declared `CMTSafeAllocator<pair<string, unsigned>>` — libstdc++
+  rebinds internally and never notices, libc++ static-asserts. It only ever
+  compiled by luck.
+- `PAGESIZE` is a POSIX macro, and Emscripten defines it (as 65536), turning
+  `PageBucketAllocator`'s `enum { PAGESIZE = 4096 }` into `enum { 65536 = 4096 }`.
+
+**Two latent bugs a newer compiler found.** `Cry_Matrix.h` called
+`SetMatFromVectors34()` and `SetRotationZ34()`; neither exists — the members are
+`SetMatFromVectors` and `SetRotationZ`. Both sat in never-instantiated templates,
+and clang 18 does not diagnose a member call on the current instantiation at
+definition time. Clang 24 does.
+
+**The ASE SDK was excluded by accident.** `CryNetwork/Server.cpp` guards the
+All-Seeing Eye server-query calls with
+`#if !defined(WIN64) && !defined(LINUX64) && !defined(NOT_USE_ASE_SDK)`, so the
+native build skipped them only because it happened to define `LINUX64`. wasm is
+`LINUX32`, so three `ASEQuery_*` symbols came up undefined. The exclusion is now
+stated as `NOT_USE_ASE_SDK` — the mechanism `ProjectDefines.h` documents — for
+the reason it is actually true: there is no source for that library on any
+platform.
+
+**Link settings.** `cmake/toolchains/Emscripten.cmake` had been written
+speculatively in Milestone 1 and was never actually included by anything. It is
+now wired in and calibrated against a real build: C++ exceptions are **on**
+(Emscripten disables catching by default, and CryPak reports a missing `.pak` by
+throwing — with catching off the first absent pak kills startup instead of
+logging), while `-pthread` and `ASYNCIFY` are **off**, because the headless
+target uses neither and both are expensive. `wasm-ld` also needs no
+`--start-group`: it resolves the whole program's symbol table at once instead of
+in one left-to-right pass, so the circular module dependencies that force a
+link group on GNU ld are a non-issue there.
 
 ### Known hard blockers
 

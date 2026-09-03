@@ -52,6 +52,17 @@ inline double sCycles2()
     mov   [H],edx   // Save high value.
   }
   return ((double)L +  4294967296.0 * (double)H);
+#elif defined(LINUX)
+  // [webport] Was __rdtsc(), an x86 intrinsic. wasm has no time-stamp counter
+  // and no way to name one; CLOCK_MONOTONIC is the portable equivalent and,
+  // as with GetTicks() in platform.h, is better behaved than the TSC anyway --
+  // no drift under frequency scaling, no jump on thread migration.
+  //
+  // The unit changes from cycles to nanoseconds, which is invisible to callers
+  // here: sCycles2() is only ever used to difference two readings.
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec * 1e9 + (double)ts.tv_nsec;
 #else
   return __rdtsc();
 #endif

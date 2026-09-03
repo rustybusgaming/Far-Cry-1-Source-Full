@@ -42,8 +42,16 @@ typedef unsigned int				u32;
 typedef unsigned long long	u64;
 
 typedef DWORD								DWORD_PTR;
-typedef int intptr_t, INT_PTR, *PINT_PTR;
-typedef unsigned int uintptr_t, UINT_PTR, *PUINT_PTR;
+// [webport] Was "typedef int intptr_t, INT_PTR, *PINT_PTR;".
+//
+// Defining intptr_t itself collides with the one the C library already
+// provides: on wasm32 <stdint.h> types it as long, which is the same 4 bytes
+// but a different type, so the redefinition is an error. Taking the C
+// library's definition and aliasing from it is both correct and what
+// Linux64Specific.h already does.
+#include <stdint.h>
+typedef intptr_t INT_PTR, *PINT_PTR;
+typedef uintptr_t UINT_PTR, *PUINT_PTR;
 typedef char *LPSTR, *PSTR;
 
 typedef long LONG_PTR, *PLONG_PTR, *PLONG;

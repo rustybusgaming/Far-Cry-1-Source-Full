@@ -909,7 +909,13 @@ template <typename F> struct Matrix34_tpl {
 			m20=vx.z;		m21=vy.z;		m22=vz.z;		m23 = pos.z;
 		}
 		ILINE static Matrix34_tpl<F> CreateMatFromVectors(const Vec3_tpl<F>& vx, const Vec3_tpl<F>& vy, const Vec3_tpl<F>& vz, const Vec3_tpl<F>& pos) {
-			Matrix34_tpl<F> m; m.SetMatFromVectors34(vx,vy,vz,pos); return m;
+			// [webport] Was SetMatFromVectors34(), which does not exist -- the
+			// member is SetMatFromVectors(), declared a few lines above. The
+			// typo survived because CreateMatFromVectors() is never
+			// instantiated anywhere in the tree, and a member call on the
+			// current instantiation is only diagnosed by compilers that look
+			// it up at definition time. clang 18 does not; clang 24 does.
+			Matrix34_tpl<F> m; m.SetMatFromVectors(vx,vy,vz,pos); return m;
 		}
 
 		void Invert( void );
@@ -1203,7 +1209,9 @@ ILINE void Matrix34_tpl<F>::SetRotationZ(const f32 rad, const Vec3_tpl<F>& t )	{
 	*this=Matrix33::CreateRotationZ(rad);  this->SetTranslation(t);
 }
 template<class F> 
-ILINE Matrix34_tpl<F> Matrix34_tpl<F>::CreateRotationZ( const f32 rad, const Vec3_tpl<F>& t   )	{	Matrix34_tpl<F> m34;  m34.SetRotationZ34(rad,t);	return m34;	}
+// [webport] Was SetRotationZ34(); the member is SetRotationZ(), defined
+// immediately above. Same class of typo as CreateMatFromVectors().
+ILINE Matrix34_tpl<F> Matrix34_tpl<F>::CreateRotationZ( const f32 rad, const Vec3_tpl<F>& t   )	{	Matrix34_tpl<F> m34;  m34.SetRotationZ(rad,t);	return m34;	}
 
 
 /*!

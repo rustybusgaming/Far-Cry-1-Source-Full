@@ -589,6 +589,26 @@ struct IFunctionHandler
 	//!	Get the number of parameter passed by lua
 	virtual int GetParamCount() = 0;
 
+	// [webport] CRY_SCRIPT_HAS_INT_PTR_PARAM -- whether IFunctionHandler carries a
+// separate GetParam() overload for INT_PTR.
+//
+// The condition this really wants is "INT_PTR is a type distinct from int", not
+// "the target is 64-bit". The two coincide on the platforms the AMD64 port
+// cared about: on x86-32 intptr_t IS int, so a separate overload would collide
+// with GetParam(int, int&). They come apart on wasm32, where pointers are four
+// bytes yet intptr_t is long -- the same width as int but a different type, so
+// the overload is both needed and unambiguous. Without it, callers passing an
+// INT_PTR (CryEngineDecalInfo::nPartID, for one) find no viable overload.
+//
+// It is spelled once here because the declaration in IFunctionHandler, the
+// declaration in CFunctionHandler and its definition must agree exactly -- and
+// when they were three separate copies of the same #if, they did not.
+#if defined(WIN64) || defined(LINUX64) || defined(__EMSCRIPTEN__)
+#define CRY_SCRIPT_HAS_INT_PTR_PARAM 1
+#else
+#define CRY_SCRIPT_HAS_INT_PTR_PARAM 0
+#endif
+
 	/*! get the nIdx param passed by the script
 		@param nIdx 1-based index of the parameter
 		@param val reference to the C++ variable that will store the value
@@ -601,7 +621,7 @@ struct IFunctionHandler
 #if defined(WIN64) || defined(LINUX)
 	inline bool GetParam(int nIdx, char * &s) {return GetParam(nIdx, (const char*&)s);}
 #endif
-#if defined(WIN64) || defined(LINUX64)
+#if CRY_SCRIPT_HAS_INT_PTR_PARAM
 	virtual bool GetParam(int nIdx, INT_PTR &n) = 0;	//## AMD Port
 #endif
 	virtual bool GetParam(int nIdx,bool &b) = 0;

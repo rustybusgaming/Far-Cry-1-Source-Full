@@ -33,7 +33,7 @@
 
 #ifdef LINUX
 #include <sys/dir.h>
-#include <sys/io.h>
+#include <unistd.h>   // [webport] was <sys/io.h>; see CrySystem/StdAfx.h
 #else
 #	include <direct.h>
 #	include <io.h>
@@ -598,7 +598,13 @@ FILE *CCryPak::FOpen(const char *pName, const char *szMode,unsigned nFlags2)
 		m_arrOpenFiles.resize (nFile+1);
 	}
 
-#if defined(LINUX64)
+// [webport] Was "#if defined(LINUX64)". The reason for the "!= 0" spelling is
+// not 64-bitness: _smart_ptr has constructors taking both an int and a raw
+// pointer, so comparing against NULL -- which the C library may define as 0L --
+// is ambiguous, since long converts equally well to int and to a null pointer.
+// A plain 0 picks the int overload outright. That is true on any 32- or 64-bit
+// LINUX target, wasm included.
+#if defined(LINUX)
 	if (pFileData != 0 && (nFlags2 & FOPEN_HINT_DIRECT_OPERATION))
 #else
 	if (pFileData != NULL && (nFlags2 & FOPEN_HINT_DIRECT_OPERATION))
@@ -653,7 +659,10 @@ CCachedFileDataPtr CCryPak::GetFileData(const char* szName)
 			}
 		}
 	}
-	return NULL;
+	// [webport] Was "return NULL;". The return type is a _smart_ptr, whose
+	// int and raw-pointer constructors are equally good matches for a NULL
+	// defined as 0L, so the conversion is ambiguous. A plain 0 is not.
+	return 0;
 }
 
 

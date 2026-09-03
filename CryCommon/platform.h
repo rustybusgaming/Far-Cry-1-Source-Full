@@ -79,7 +79,14 @@ typedef void *EVENT_HANDLE;
 #endif
 
 #if defined(LINUX32)
+// [webport] wasm32 is 32-bit but it is not x86: there is no register file to
+// name, no SSE, and no inline assembly at all. _CPU_X86 gates hand-written
+// x86 in Cry_XOptimise.h, CryAnimation/SSEUtils.h and the frame profilers'
+// cycle counters, so claiming it here would select code that cannot be
+// compiled, let alone run.
+#if !defined(__EMSCRIPTEN__)
 #define _CPU_X86
+#endif
 #include <Linux32Specific.h>
 #endif
 
@@ -234,6 +241,10 @@ typedef int                 INT;
 typedef unsigned int        UINT;
 typedef unsigned int        *PUINT;
 
+#if defined(LINUX)
+#include <time.h>      // [webport] clock_gettime/CLOCK_MONOTONIC, see GetTicks()
+#endif
+
 #if defined(WIN64) || defined(LINUX)
 #ifdef __cplusplus
 inline int64 GetTicks()
@@ -259,9 +270,29 @@ static int64 GetTicks()
     long long QuadPart;
 	} LARGE_INTEGER;
 
-	LARGE_INTEGER counter;
-	__asm__ __volatile__ ( "rdtsc" : "=a" (counter.u.LowPart), "=d" (counter.u.HighPart) );
-	return counter.QuadPart;
+	// [webport] Was:
+	//     __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+	//
+	// wasm has no inline assembly at all -- it is a stack machine with no
+	// register file to name -- so "=a"/"=d" cannot be expressed. But the
+	// replacement is not merely the portable option; it is the correct one,
+	// and it fixes a real bug on native Linux too.
+	//
+	// CFrameProfilerTimer converts these ticks to seconds with
+	// g_fSecondsPerTick, which it initialises from g_nTicksPerSecond. On
+	// Windows that comes from QueryPerformanceFrequency and on GameCube from
+	// OS_CORE_CLOCK, but on LINUX neither #ifdef runs and both keep their
+	// defaults: g_nTicksPerSecond = 1000000000, so g_fSecondsPerTick = 1e-9.
+	// The profiler has therefore always believed one tick is one NANOSECOND,
+	// while rdtsc was handing it CPU cycles -- so every profiler number on
+	// Linux was overstated by the clock rate in GHz.
+	//
+	// CLOCK_MONOTONIC returns exactly the nanoseconds the profiler already
+	// assumes, and is better behaved than the TSC besides: no drift under
+	// frequency scaling, no jump when a thread migrates between cores.
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (int64)ts.tv_sec * 1000000000LL + (int64)ts.tv_nsec;
 #endif
 }
 #endif

@@ -16,7 +16,10 @@
 #define _CRY_COMMON_LINUX64_SPECIFIC_HDR_
 
 #include "LinuxSpecific.h"
-#include </usr/include/stdint.h>
+// [webport] Was #include </usr/include/stdint.h>. An absolute path pins the
+// host's system header, which is wrong for any cross-compile -- it would reach
+// past the sysroot straight into the host's glibc.
+#include <stdint.h>
 
 typedef signed char         int8;
 typedef signed short        int16;

@@ -72,7 +72,7 @@ typedef unsigned char BYTE;
 #ifndef GAMECUBE
 #	include <stdio.h>
 #	if defined(LINUX)
-#		include <sys/io.h>
+#include <unistd.h>   // [webport] was <sys/io.h>; see CrySystem/StdAfx.h
 #	else
 #		include <io.h>
 #	endif

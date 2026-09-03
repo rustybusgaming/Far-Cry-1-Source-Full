@@ -13,6 +13,19 @@ public:
 	_smart_ptr(typeof(__null)) : p(NULL) {}
 #endif
 	_smart_ptr(int Null) : p(NULL) {}
+#if defined(__EMSCRIPTEN__)
+	// [webport] Emscripten's headers define NULL as 0L, not as __null. That
+	// makes it a long, which is an equally poor match for _smart_ptr(int) --
+	// needing an integral conversion -- and for _smart_ptr(_I*), since 0L is
+	// still a null pointer constant. The result is an ambiguity at every
+	// "SmartPtr = NULL" and "SmartPtr != NULL" in the engine.
+	//
+	// A long overload settles it by being an exact match. It cannot collide
+	// with the int one above: long and int are distinct types on wasm32 even
+	// though both are four bytes. This is the same reasoning as the LINUX64
+	// typeof(__null) overload, applied to how this libc spells NULL.
+	_smart_ptr(long Null) : p(NULL) {}
+#endif
   _smart_ptr(_I* p_)
 	{
 		p = p_;
@@ -111,6 +124,31 @@ inline bool operator !=(int null, const _smart_ptr<_I> &p1)
 {
 	return (bool)p1;	
 }
+
+#if defined(__EMSCRIPTEN__)
+// [webport] The long counterparts of the four operators above; see the
+// _smart_ptr(long) constructor for why NULL needs them on this libc.
+template <class _I>
+inline bool operator ==(const _smart_ptr<_I> &p1, long null)
+{
+	return !(bool)p1;
+}
+template <class _I>
+inline bool operator !=(const _smart_ptr<_I> &p1, long null)
+{
+	return (bool)p1;
+}
+template <class _I>
+inline bool operator ==(long null, const _smart_ptr<_I> &p1)
+{
+	return !(bool)p1;
+}
+template <class _I>
+inline bool operator !=(long null, const _smart_ptr<_I> &p1)
+{
+	return (bool)p1;
+}
+#endif //__EMSCRIPTEN__
 /*
 #if defined(LINUX64)
 template <class _I>

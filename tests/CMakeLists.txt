@@ -30,13 +30,7 @@ add_test(NAME webinput COMMAND test_webinput)
 add_executable(test_static_modules test_static_modules.cpp)
 cry_apply_common_settings(test_static_modules)
 target_include_directories(test_static_modules PRIVATE "${PROJECT_SOURCE_DIR}/CryCommon")
-if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
-    target_link_libraries(test_static_modules PRIVATE
-        "$<LINK_GROUP:RESCAN,${CRY_HEADLESS_MODULES}>")
-else()
-    target_link_libraries(test_static_modules PRIVATE
-        -Wl,--start-group ${CRY_HEADLESS_MODULES} -Wl,--end-group)
-endif()
+cry_link_module_group(test_static_modules ${CRY_HEADLESS_MODULES})
 target_link_libraries(test_static_modules PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
 
 add_test(NAME static_modules COMMAND test_static_modules)
