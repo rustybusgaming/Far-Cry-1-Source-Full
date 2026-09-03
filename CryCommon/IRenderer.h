@@ -98,7 +98,7 @@ template	<class T> class list2;
 
 //DOC-IGNORE-BEGIN
 #include "ColorDefs.h"
-#include "TArray.h"
+#include "Tarray.h"
 
 #include <IFont.h>
 //DOC-IGNORE-END
@@ -602,6 +602,7 @@ typedef struct __HGLRC* HGLRC;
 /*
 // The following may be (and sometimes is) used for testing. Please don't remove.
 struct IRenderer;
+
 class IRendererCallbackServer;
 
 // Renderer callback client.
@@ -676,6 +677,17 @@ struct SDrawTextInfo
 #define MAX_FRAME_ID_STEP_PER_FRAME 8
 
 //////////////////////////////////////////////////////////////////////
+// [webport] Used by pointer only in IRenderer::DrawDynVB, so a declaration is
+// enough and avoids pulling VertexFormats.h -- which includes IShader.h, which
+// comes back here.
+//
+// This MUST be at namespace scope. Declared inside the class body (as it first
+// was) it introduces a NESTED IRenderer::struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F,
+// which then shadows the real type for every derived class -- CRenderer in
+// RenderDll/Common/Renderer.h declares an ARRAY of it, and got an incomplete
+// nested type instead of the real one.
+struct struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F;
+
 struct IRenderer//: public IRendererCallbackServer
 {
 	//! Init the renderer, params are self-explanatory

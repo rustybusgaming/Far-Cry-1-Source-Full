@@ -9,7 +9,7 @@
 #include "ControllerPackedBSpline.h"
 #include "FileMapping.h"
 #include "ChunkFileReader.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "CryModelAnimationContainer.h"
 
 #if defined(LINUX)

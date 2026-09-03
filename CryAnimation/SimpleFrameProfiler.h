@@ -272,7 +272,7 @@ protected:
 
 // set #if 0 here if you don't want profiling to be compiled in the code
 #if ENABLE_FRAME_PROFILER
-#include "CVars.h"
+#include "cvars.h"
 #define DECLARE_FRAME_PROFILER(id,name) extern CSimpleFrameProfilerInfo __##id##_frame_profiler
 #define DEFINE_FRAME_PROFILER(id,name) CSimpleFrameProfilerInfo __##id##_frame_profiler(name)
 #define PROFILE_FRAME_SELF(id) CRecursiveFrameProfiler __##id##_auto_frame_profile_locker(CryAnimationBase::GetCVars()->ca_Profile()?&__##id##_frame_profiler:NULL)

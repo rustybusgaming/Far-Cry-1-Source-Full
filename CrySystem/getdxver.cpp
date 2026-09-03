@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <tchar.h>
 #ifndef WIN64
-#include "dxdiag.h"
+#include "DxDiag.h"
 #endif
 
 HRESULT GetDirectXVersionViaDxDiag( DWORD* pdwDirectXVersionMajor, DWORD* pdwDirectXVersionMinor, TCHAR* pcDirectXVersionLetter );

@@ -67,8 +67,17 @@ extern "C" {
 #define JBUFSIZE    4096
 
 
+// [webport] __int64 is an MSVC built-in. Linux{,64}Specific.h supplies it as a
+// TYPEDEF for long long, and "unsigned <typedef>" is not valid C++ -- the
+// unsigned specifier can only be applied to a built-in integer type name. So
+// the 64-bit types are spelled directly here for non-MSVC compilers.
+#if defined(LINUX)
+#define IJL_INT64  long long
+#define IJL_UINT64 unsigned long long
+#else
 #define IJL_INT64  __int64
 #define IJL_UINT64 unsigned IJL_INT64
+#endif
 
 
 #ifndef IJLAPI

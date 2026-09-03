@@ -12,16 +12,16 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #ifndef _XBOX 
 #include "Sound.h"
 #include <CrySizer.h>
 #include <Cry_Camera.h>
 #include "SoundSystem.h"
-#include <ICOnsole.h>
+#include <IConsole.h>
 #include <ISystem.h>
 #include <ITimer.h>
-#include <I3dEngine.h> //needed to check if the listener is in indoor or outdoor
+#include <I3DEngine.h> //needed to check if the listener is in indoor or outdoor
 
 #pragma warning(disable:4003)	// warning C4003: not enough actual parameters for macro 'CHECK_LOADED'
  
@@ -614,7 +614,9 @@ void CSound::SetName(const char *szName)
 const char *CSound::GetName()
 {
 	//return (m_strName.c_str());
-	if (m_pSound!=NULL)
+	// [webport] NULL is 0L and _smart_ptr has both operator!=(const _I*) and an
+	// implicit conversion, so the comparison is ambiguous; the cast selects it.
+	if (m_pSound!=(CSoundBuffer*)NULL)
 		return (m_pSound->GetName());
 	return (m_pSSys->m_szEmptyName);
 }
@@ -922,7 +924,11 @@ void CSound::SetPitch(int nValue)
 //////////////////////////////////////////////////////////////////////
 void CSound::SetLoopPoints(const int iLoopStart, const int iLoopEnd)
 {
-	CHECK_LOADED(SetLoopPoints);
+	// [webport] CHECK_LOADED takes (_func, _retval); the second argument was
+	// omitted. MSVC's preprocessor substituted empty, yielding "return ;" --
+	// valid here because SetLoopPoints returns void. Standard C++ requires the
+	// argument to be present, even if empty, so the comma is now explicit.
+	CHECK_LOADED(SetLoopPoints, );
 	if (m_pSound->GetSample())
 	{
 		GUARD_HEAP;

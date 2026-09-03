@@ -11,13 +11,13 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
 #include "CryPak.h"
-#include <ilog.h>
+#include <ILog.h>
 #include <StringUtils.h>
 
 /////////////////////////////////////////////////////
@@ -879,8 +879,20 @@ int CCryPak::Ungetc(int c, FILE *hFile)
 		return ungetc(c, hFile);
 }
 
+// [webport] Made file-local for the single-link-unit build.
+//
+// RenderDll/Common/ResFile.cpp defines a DIFFERENT function with the same name
+// and signature: it scans BACKWARD and returns the last '.', while this one
+// scans FORWARD and returns the first. For "terrain.detail.dds" they return
+// ".detail.dds" and ".dds" respectively. Per-DLL linkage kept them apart; in
+// one link unit they collide, and picking either would silently change one
+// module's behaviour.
+//
+// This copy has no callers outside this file, and the renderer's is declared
+// in RenderPCH.h and called from six of its translation units -- so this is
+// the one that becomes static. Both keep the semantics they had.
 #ifndef _XBOX
-const char *GetExtension (const char *in)
+static const char *GetExtension (const char *in)
 {
 	while (*in)
 	{

@@ -384,7 +384,20 @@ inline void CopyPhysInfo (BONE_PHYSICS& left, const BONE_PHYSICS_COMP& right)
 }
 inline void CopyPhysInfo (BONE_PHYSICS_COMP& left, const BONE_PHYSICS& right)
 {
-	left.nPhysGeom = (int)right.pPhysGeom;
+	// [webport] BONE_PHYSICS_COMP::nPhysGeom is an "int" that this code uses to
+	// carry a phys_geometry* (line 374 casts it back). That is lossy on any
+	// 64-bit target -- the top half of the pointer is discarded -- and clang
+	// rejects the narrowing outright.
+	//
+	// Casting via INT_PTR matches the reverse conversion at line 374 and makes
+	// the intent explicit. It is genuinely sound on the port's actual target,
+	// wasm32, where pointers are 32 bits. It is NOT sound on the native x86_64
+	// triage build; that build only ever type-checks, it is never run.
+	//
+	// The real fix is to widen nPhysGeom to INT_PTR, but the struct is
+	// serialised in .cgf assets, so changing it is a file-format change and
+	// belongs with the asset pipeline work, not here.
+	left.nPhysGeom = (int)(INT_PTR)right.pPhysGeom;
 	left.flags     = right.flags;
 	__copy3(min);
 	__copy3(max);
@@ -502,7 +515,9 @@ inline void CopyMatEntity(MAT_ENTITY& left, const MAT_ENTITY_COMP& right)
 inline void CopyMatEntity(MAT_ENTITY_COMP& left, const MAT_ENTITY& right)
 {
 	(MAT_ENTITY_DATA&)left = (MAT_ENTITY_DATA&)right;
-	left.m_iMaterialChildren = (int)right.m_pMaterialChildren;
+	// [webport] Same pointer-carried-in-an-int pattern as CopyPhysInfo above;
+	// see the note there. Cast via INT_PTR to make the narrowing explicit.
+	left.m_iMaterialChildren = (int)(INT_PTR)right.m_pMaterialChildren;
 }
 
 #ifdef WIN64

@@ -20,6 +20,16 @@
 
 #include <platform.h>
 
+// [webport] On Windows the socket API arrives with <windows.h>/<winsock2.h>.
+// Here it comes from BSD sockets via WinSockCompat.h, which maps the Winsock
+// spellings (closesocket, ioctlsocket, WSAGetLastError, WSAStartup) onto their
+// POSIX equivalents. Read that header before assuming this module works in a
+// browser: it compiles and runs natively, but a browser cannot open a UDP
+// socket at all, and Far Cry's netcode is UDP throughout.
+#if defined(LINUX)
+#include "WinSockCompat.h"
+#endif
+
 #ifndef _XBOX
 #ifdef WIN32
 #include <windows.h>

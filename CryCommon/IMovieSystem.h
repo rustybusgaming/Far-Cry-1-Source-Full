@@ -12,6 +12,11 @@
 //  History:
 //
 ////////////////////////////////////////////////////////////////////////////
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "ColorDefs.h"
+
 
 #ifndef __imoviesystem_h__
 #define __imoviesystem_h__

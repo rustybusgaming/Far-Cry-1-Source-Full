@@ -13,18 +13,18 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include <ILMSerializationManager.h>
 #include "StatObj.h"
-#include "objman.h"
-#include "visareas.h"
+#include "ObjMan.h"
+#include "VisAreas.h"
 #include "terrain_sector.h"
 #include "cbuffer.h"
-#include "3DEngine.h"
-#include "meshidx.h"
-#include "watervolumes.h"
+#include "3dEngine.h"
+#include "MeshIdx.h"
+#include "WaterVolumes.h"
 #include "LMCompStructures.h"
-#include "brush.h"
+#include "Brush.h"
 
 //////////////////////////////////////////////////////////////////////////
 // Brush Export structures.
@@ -150,7 +150,8 @@ bool CBrush::DrawEntity(const struct SRendParams & _EntDrawParams)
 //  if(!strstr(m_pStatObj->GetFileName(),"SWR_MP_PumpB.cgf"))
   //  return false;
 
-  int nRecursionLevel = (int)GetRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
+  // [webport] Same EF_Query void*-carrying-an-int cast as 3DEngineRender.cpp.
+  int nRecursionLevel = (int)(INT_PTR)GetRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
 
   // some parameters will be modified
 	SRendParams rParms = _EntDrawParams;

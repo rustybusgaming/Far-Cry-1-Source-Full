@@ -21,7 +21,7 @@
 #include "CryBoneHierarchyLoader.h"
 #include "StringUtils.h"
 #include <StlUtils.h>
-#include "CVars.h"
+#include "cvars.h"
 
 */
 

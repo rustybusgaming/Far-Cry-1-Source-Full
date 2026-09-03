@@ -3,7 +3,7 @@
 #include "MathUtils.h"
 #include "CryCharDecalBuilder.h"
 
-#include "CVars.h"
+#include "cvars.h"
 
 CryCharDecalBuilder::CryCharDecalBuilder (CryEngineDecalInfo& rDecal, CryGeometryInfo* pGeometry, const Vec3d* pVertices):
 	m_rDecal (rDecal),

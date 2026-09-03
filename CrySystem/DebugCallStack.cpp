@@ -28,7 +28,7 @@
 #include <time.h>
 #include <crtdbg.h>
 
-#include "Resource.h"
+#include "resource.h"
 
 #pragma comment(lib, "version.lib")
 

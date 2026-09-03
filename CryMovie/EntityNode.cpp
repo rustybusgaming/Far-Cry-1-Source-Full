@@ -20,8 +20,8 @@
 #include "AnimSplineTrack.h"
 #include "ExprTrack.h"
 #include "BoolTrack.h"
-#include "isystem.h"
-#include "ilog.h"
+#include "ISystem.h"
+#include "ILog.h"
 #include "Movie.h"
 
 #include <ISound.h>
@@ -394,7 +394,10 @@ void CAnimEntityNode::Animate( SAnimContext &ec )
 	bool bPosModified = (m_pos != pos);
 	bool bAnglesModified = (m_rotate.v != rotate.v) || (m_rotate.w != rotate.w);
 
-	if (bPosModified || bAnglesModified || (m_scale != scale) || (m_target!=NULL))
+	// [webport] NULL is 0L here, and TSmartPtr has both operator!=(const _T*)
+	// and an implicit conversion, so "m_target != NULL" is ambiguous. Casting
+	// NULL to the pointed-to type selects the intended overload.
+	if (bPosModified || bAnglesModified || (m_scale != scale) || (m_target!=(IAnimNode*)NULL))
 	{
 		InvalidateTM();
 		bMatrixModified = true;

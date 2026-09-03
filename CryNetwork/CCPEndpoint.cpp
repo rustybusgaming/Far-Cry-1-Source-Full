@@ -10,7 +10,7 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "CCPEndpoint.h"
 #include "Network.h"
 
@@ -23,7 +23,12 @@ static char THIS_FILE[] = __FILE__;
 #define new DEBUG_CLIENTBLOCK
 #endif
 
-#ifndef WIN32
+// [webport] This local stub returned 0 for any non-Windows build. WinBase.h
+// now supplies a real GetCurrentProcessId() backed by getpid(), and the two
+// clash -- they differ only in return type (DWORD vs int), which is not a
+// valid overload. The stub is excluded here rather than the shim, because a
+// genuine pid is strictly more useful than a hardcoded 0.
+#if !defined(WIN32) && !defined(LINUX)
 int GetCurrentProcessId()
 {
 	return 0;

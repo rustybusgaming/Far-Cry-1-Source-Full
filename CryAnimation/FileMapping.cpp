@@ -1,4 +1,4 @@
-#include "StdAfx.h"
+#include "stdafx.h"
 #include "FileMapping.h"
 
 #ifdef _DEBUG

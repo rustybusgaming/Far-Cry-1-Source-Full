@@ -77,8 +77,8 @@ cgProgramManager - a class for loading various pixel & vertex shaders
 #include <d3d8.h>
 #include <d3dx8.h>
 
-#include <Cg/cgTemplates.h>
-#include <Cg/cg.h>
+#include <cgTemplates.h>
+#include <cg.h>
 
 
 

@@ -1,5 +1,11 @@
 // Using the structure defined in this header, the leaf buffer is created
 // from serialized data in the compiled CCG file
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "CryHeaders.h"
+#include "VertexFormats.h"
+
 
 #ifndef _VERTEX_BUFFER_SOURCE_HDR_
 #define _VERTEX_BUFFER_SOURCE_HDR_

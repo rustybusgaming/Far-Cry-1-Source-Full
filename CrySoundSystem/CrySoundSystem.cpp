@@ -1,7 +1,7 @@
 // CrySoundSystem.cpp : Defines the entry point for the DLL application.
 //
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #ifdef USING_CRY_MEMORY_MANAGER
 #ifndef _XBOX
@@ -18,15 +18,26 @@ struct CryModuleMemoryInfo
 	//! Total number of memory allocations.
 	int num_allocations;
 };
+// [webport] __declspec(dllexport) marks a Win32 DLL export. ELF expresses
+// symbol visibility differently, and in wasm every module links into one unit,
+// so there is nothing to export from.
+#if defined(LINUX)
+extern "C" void CryModuleGetMemoryInfo( CryModuleMemoryInfo *pMemInfo )
+#else
 extern "C" __declspec(dllexport) void CryModuleGetMemoryInfo( CryModuleMemoryInfo *pMemInfo )
+#endif
 {
-#if (defined CS_VERSION_372) || (defined CS_VERSION_361)
+// [webport] The size_t branch is wrong on any 64-bit target: crysound.h
+// declares
+//     CS_GetMemoryStats(unsigned int *currentalloced, unsigned int *maxalloced)
+// so passing size_t* (8 bytes on LP64) hands it pointers to objects twice the
+// width it will write, leaving the upper half uninitialised.
+//
+// It went unnoticed because the engine only ever built this 32-bit, where
+// size_t and unsigned int are the same type. unsigned int matches the declared
+// signature on every platform, so the conditional serves no purpose.
   unsigned int nCurrentAlloced;
 	unsigned int nMaxAlloced;
-#else
-  size_t nCurrentAlloced;
-	size_t nMaxAlloced;
-#endif
   CS_GetMemoryStats(&nCurrentAlloced, &nMaxAlloced);
 	pMemInfo->allocated = nMaxAlloced;
 	pMemInfo->freed = 0;
@@ -78,7 +89,9 @@ extern "C" ISoundSystem* CreateSoundSystem(struct ISystem* pISystem, void* pInit
 }
 
 #ifndef __MWERKS__
-#ifndef _XBOX
+// [webport] DllMain is the Win32 DLL entry point; no DLLs on Linux, none at
+// all in wasm.
+#if !defined(_XBOX) && !defined(LINUX)
 ///////////////////////////////////////////////
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD  ul_reason_for_call,  LPVOID lpReserved)
 {

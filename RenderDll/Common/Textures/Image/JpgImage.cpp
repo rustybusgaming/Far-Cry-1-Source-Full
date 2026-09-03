@@ -215,7 +215,7 @@ CImageJpgFile::CImageJpgFile (byte* ptr, long filesize) : CImageFile ()
 
 extern "C"
 {
-  #include "Jpeg6/Jpeglib.h"
+  #include "jpeg6/jpeglib.h"
   #include "Jmemsrc.c" // include buffer source input code
 }
 
@@ -381,7 +381,12 @@ CImageJpgFile::CImageJpgFile (byte* ptr, long filesize) : CImageFile () {
 
 void WriteJPG(byte *dat, int wdt, int hgt, char *name)
 {
-#if !defined(PS2) && !defined(WIN64) && !defined(NULL_RENDERER)
+// [webport] LINUX added, to match the include guard at the top of this file.
+// Line 14 already excludes ijl.h on LINUX -- the Intel JPEG Library ships as
+// lib_win32/ijl15.lib with no source and no non-Windows build -- but this
+// guard did not, so the body still referenced types the header never provided.
+// The #else branch below is the existing stub for platforms without it.
+#if !defined(PS2) && !defined(WIN64) && !defined(NULL_RENDERER) && !defined(LINUX)
   JPEG_CORE_PROPERTIES image;
   ZeroMemory( &image, sizeof( JPEG_CORE_PROPERTIES ) );
 

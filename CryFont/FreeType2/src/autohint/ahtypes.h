@@ -28,7 +28,7 @@
 #include FT_INTERNAL_OBJECTS_H
 
 #ifdef DEBUG_HINTER
-#include <../src/autohint/ahloader.h>
+#include <ahloader.h>
 #else
 #include "ahloader.h"
 #endif

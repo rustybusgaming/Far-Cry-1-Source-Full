@@ -17,8 +17,8 @@
 #include "CryModelState.h"
 #include "ControllerManager.h"
 #include "ChunkFileReader.h"
-#include "STringUtils.h"
-#include "CVars.h"
+#include "StringUtils.h"
+#include "cvars.h"
 
 
 #ifdef _DEBUG

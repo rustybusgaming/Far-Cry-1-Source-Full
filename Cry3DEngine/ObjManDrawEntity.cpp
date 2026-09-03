@@ -13,17 +13,17 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "StatObj.h"
-#include "objman.h"
-#include "visareas.h"
+#include "ObjMan.h"
+#include "VisAreas.h"
 #include "terrain_sector.h"
-#include "3dengine.h"
+#include "3dEngine.h"
 #include "cbuffer.h"
-#include "3dengine.h"
-#include "cryparticlespawninfo.h"
-#include "lightman.h"
+#include "3dEngine.h"
+#include "CryParticleSpawnInfo.h"
+#include "LightMan.h"
 #include <utility>
 
 #define MAX_SHADOW_VOLUME_LEN 8.f
@@ -1260,12 +1260,16 @@ void CObjManager::RenderEntityShadowOnTerrain(IEntityRender * pEntityRnd, bool b
 				pRendState->pShadowMapInfo->pShadowMapLeafBuffersList = new list2<struct CLeafBuffer *>;
 			pRendState->pShadowMapInfo->pShadowMapLeafBuffersList->PreAllocate(16,16);
 
+			// [webport] "&Vec3d(pEntityRnd->GetPos())" took the address of a
+			// temporary, which is ill-formed; MSVC 7.1 allowed it. A named
+			// local outlives the call and is otherwise identical.
+			Vec3d vEntityPos = pEntityRnd->GetPos();
 			bREAdded = m_pTerrain->RenderAreaLeafBuffers(vPos, fQuadRadius, 0, 
 				pRendState->pShadowMapInfo->pShadowMapLeafBuffersList->GetElements(), 
 				pRendState->pShadowMapInfo->pShadowMapLeafBuffersList->Count(),
 				pObj, m_pTerrain->m_pTerrainShadowPassEf, bRecalcLeafBuffers, "EntityShadowOnTerrain",0,0,
 				pRendState->pShadowMapInfo->pShadowMapFrustumContainer->GetShadowMapFrustum(),
-				&Vec3d(pEntityRnd->GetPos()),
+				&vEntityPos,
 				(pEntityRnd->GetEntityRenderType() == eERType_Vegetation) ? pEntityRnd->GetScale() : 1.f);
 		}
 

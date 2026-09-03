@@ -13,11 +13,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "StatObj.h"
 #include "MeshIdx.h"
-#include "irenderer.h"
+#include "IRenderer.h"
 
 #ifdef WIN64
 #pragma warning( push )									//AMD Port
@@ -159,6 +159,14 @@ bool CStatObj::CompileInNeeded()
 		return false;
 
 #endif // WIN32
+
+	// [webport] The entire body above is inside #ifdef WIN32: it shells out to
+	// rc.exe with CreateProcess to turn a .cgf into a .ccgf. There is no
+	// resource compiler to spawn on Linux, and no process spawning at all in
+	// wasm, so assets have to arrive precompiled. Reporting "not compiled" is
+	// the honest answer; without this the function fell off the end and every
+	// caller read an indeterminate bool.
+	return false;
 }
 
 #ifdef WIN64

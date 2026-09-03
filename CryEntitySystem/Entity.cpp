@@ -1286,7 +1286,10 @@ void CEntity::UpdateLipSync( SEntityUpdateContext &ctx )
 void CEntity::OnCollide(float fDeltaTime)
 {
 	//m_pISystem->GetILog()->LogToConsole("diff=%0.2f",m_pISystem->GetITimer()->GetCurrTime()-m_fLastCollideTime);
-	int bAwake = m_physic ? m_physic->GetStatus(&pe_status_awake()) : 0;
+	// [webport] Taking the address of a temporary is ill-formed; MSVC 7.1
+	// allowed it. GetStatus only reads the struct during the call.
+	pe_status_awake statusAwake;
+	int bAwake = m_physic ? m_physic->GetStatus(&statusAwake) : 0;
 	float fFreq = m_physic && (m_physic->GetType()==PE_RIGID || m_physic->GetType()==PE_WHEELEDVEHICLE) && (bAwake+m_bWasAwake) ? 0.01f : 0.3f;
 	float fFrameTime = m_pISystem->GetITimer()->GetCurrTime()-m_fLastCollideTime;
 	if (!m_physic || fFrameTime<=fFreq && bAwake==m_bWasAwake)
@@ -1467,7 +1470,9 @@ void CEntity::OnCollide(float fDeltaTime)
 		IGeometry *pWaterSurface = pWorld->GetGeomManager()->CreatePrimitive(primitives::box::type, &boxWater);
 		m_pSplashList->Clear();
 
-		for(sp.ipart=m_physic->GetStatus(&pe_status_nparts())-1; sp.ipart>=0; sp.ipart--)
+		// [webport] Address of a temporary; a named local is valid and identical.
+		pe_status_nparts statusNparts;
+		for(sp.ipart=m_physic->GetStatus(&statusNparts)-1; sp.ipart>=0; sp.ipart--)
 		{
 			m_physic->GetStatus(&sp);
 			gwd.offset = sp.pos;
@@ -1674,7 +1679,23 @@ void CEntity::UpdatePhysics( SEntityUpdateContext &ctx )
 					pLB->InvalidateVideoBuffer();
 				}
 			}
-			if ((m_bVisible^m_bWasVisible) && (!m_bVisible || psb.wind*psb.airResistance>0))
+			// [webport] The original read:
+			//     (m_bVisible^m_bWasVisible) && (!m_bVisible || psb.wind*psb.airResistance>0)
+			//
+			// psb.wind is a vectorf and Vec3_tpl has "operator F*()"
+			// (Cry_Vector3.h:83), so "wind*airResistance > 0" converted the
+			// resulting TEMPORARY to its own address and compared that against 0.
+			// The address of a temporary is never null, so the clause was
+			// unconditionally true and the condition reduced to the visibility
+			// test alone. clang rejects the pointer/int comparison outright.
+			//
+			// The dead clause is dropped, which preserves the behaviour this code
+			// has always had. It was evidently MEANT to ask whether there is any
+			// wind-driven air resistance -- something like
+			// (psb.airResistance > 0 && psb.wind.len() > 0) -- but making it live
+			// now would change soft-body physics, so that is left to the physics
+			// owner rather than smuggled in as a compile fix.
+			if (m_bVisible^m_bWasVisible)
 				m_physic->Action(&aa);
 		}
 
@@ -2194,7 +2215,9 @@ void CEntity::AddImpulse(int ipart, Vec3d pos, Vec3d impulse,bool bPos,float fAu
 		))
 	{
 		Vec3d mod_impulse = impulse;
-		if (!(physic->GetStatus(&pe_status_nparts())>5 && physic->GetType()==PE_ARTICULATED))
+		// [webport] Address of a temporary; a named local is valid.
+		pe_status_nparts statusNpartsCheck;
+		if (!(physic->GetStatus(&statusNpartsCheck)>5 && physic->GetType()==PE_ARTICULATED))
 		{	// don't scale impulse for complex articulated entities
 			pe_status_dynamics sd;
 			float minVel = m_pEntitySystem->m_pMinImpulseVel->GetFVal();

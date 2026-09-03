@@ -13,10 +13,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "DecalManager.h"
-#include "3dengine.h"
+#include "3dEngine.h"
 #include <IStatObj.h>
 #include "ObjMan.h"
 

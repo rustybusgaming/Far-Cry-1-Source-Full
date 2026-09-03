@@ -27,7 +27,21 @@ typedef void*								LPVOID;
 #define VOID            		void
 #define PVOID								void*
 
-#define PHYSICS_EXPORTS
+// [webport] PHYSICS_EXPORTS deliberately NOT defined here.
+//
+// It means "I am building CryPhysics": it selects __declspec(dllexport) over
+// dllimport in CryPhysics.h/IPhysics.h, and it makes Cry_Math.h skip its
+// no-op VALIDATOR_* stubs on the assumption that CryPhysics/utils.h will
+// supply the real ones.
+//
+// Defining it for every module on LINUX meant every translation unit claimed
+// to be CryPhysics, so the stubs were never defined and physinterface.h --
+// which uses VALIDATORS_START in six struct bodies -- failed to compile in
+// any module that included it. The dllexport half was harmless on Linux
+// (__declspec is defined away above), which is why it went unnoticed.
+//
+// The CryPhysics target defines it for itself; nobody else should.
+// #define PHYSICS_EXPORTS
 
 #ifdef __cplusplus
 // checks if the heap is valid in debug; in release, this function shouldn't be called

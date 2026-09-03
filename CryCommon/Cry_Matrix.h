@@ -12,6 +12,21 @@
 //////////////////////////////////////////////////////////////////////
 
 
+// [webport] Canonical entry point for the math template cluster.
+//
+// Cry_Vector2/3, Cry_Quat and Cry_Matrix are mutually recursive, and several
+// of them need COMPLETE types from each other (Quaternion_tpl stores a Vec3
+// by value), not just declarations. Exactly one include order satisfies all of
+// them, and Cry_Math.h is the header that establishes it.
+//
+// This include sits ABOVE the include guard on purpose. If it sat below, the
+// guard would already be set when the cluster recursed back into this header,
+// the body would be skipped, and the type would still be incomplete at the
+// point of use -- the deadlock that made these four headers unbuildable
+// standalone. Hoisting it means any entry point funnels through Cry_Math.h's
+// ordering, and the redundant re-entry here is a cheap no-op.
+#include "Cry_Math.h"
+
 #ifndef MATRIX_H
 #define MATRIX_H 
 
@@ -19,6 +34,7 @@
 # pragma once
 #endif
 
+#include "Cry_MathFwd.h"   // [webport] declarations for the math cluster
 #include "Cry_Quat.h"
 #include "Cry_Vector2.h"
 #include "Cry_Vector3.h"
@@ -2118,5 +2134,52 @@ ILINE Vec3 UntransformVector (const Matrix44& m, const Vec3& v) {
 
 
 
+
+
+//////////////////////////////////////////////////////////////////////////
+// [webport] Out-of-line definitions for the two Quaternion_tpl constructors
+// declared in Cry_Quat.h. Placed here because this is the first point at
+// which both Quaternion_tpl and the concrete Matrix33 types are complete.
+//////////////////////////////////////////////////////////////////////////
+template<class F> template<class T>
+ILINE Quaternion_tpl<F>::Quaternion_tpl(const Matrix34_tpl<T>& m)
+{ *this = GetQuatFromMat33(Matrix33(m)); }
+
+template<class F> template<class F1,int SI,int SJ>
+ILINE Quaternion_tpl<F>::Quaternion_tpl(const Matrix44_tpl<F1,SI,SJ>& m)
+{ *this = GetQuatFromMat33(Matrix33_tpl<f32,3,1>(m)); }
+
+
+//////////////////////////////////////////////////////////////////////////
+// [webport] Namespace-scope declarations for in-class friends that get called
+// with an argument of a DIFFERENT type than the class defining them.
+//
+// A friend defined inside a class template is a non-template function created
+// per instantiation, findable only by ADL on its parameter types. That works
+// when the argument is the class itself. It fails for calls like
+//
+//     Cry_Camera.h:986   return GetTransposed44( ViewMatX*ViewMatY*ViewMatZ );
+//
+// where the argument expression is a Matrix33: ADL searches Matrix33_tpl's
+// scope, while GetTransposed44 is a friend of Matrix44_tpl. Ordinary lookup
+// finds it and then applies Matrix44_tpl's converting constructor from
+// Matrix33_tpl (Cry_Matrix.h:1349) -- but ordinary lookup has nothing to find
+// until the name exists at namespace scope, which is what these provide.
+//
+// Declared for the concrete instantiations actually used, because the friends
+// are non-template functions rather than a function template.
+//////////////////////////////////////////////////////////////////////////
+// Only the f32 instantiation is declared. Adding the Matrix44_f64 overload
+// would force Matrix44_tpl<real,4,1> to be instantiated here, and two
+// instantiations of this class template emit in-class friend operators with
+// identical signatures -- an ODR clash (Cry_Matrix.h:1449). It would also make
+// the Matrix33 argument above convert equally well to both, rendering the call
+// ambiguous. f32 is the instantiation the engine actually uses.
+ILINE Matrix44 GetTransposed44( const Matrix44& m );
+
+// Same problem, different function: GetTranslationMat is a friend of
+// Matrix44_tpl but takes only a Vec3, so ADL searches Vec3_tpl's scope and
+// never finds it (Vegetation.cpp:327).
+ILINE Matrix44 GetTranslationMat( const Vec3& v );
 
 #endif //MATRIX_H

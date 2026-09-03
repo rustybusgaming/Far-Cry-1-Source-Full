@@ -11,14 +11,14 @@
 //////////////////////////////////////////////////////////////////////
 
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "Client.h"
 #include "CNP.h"
 #include "IGame.h"
 #include "IScriptSystem.h"
 
 #ifndef NOT_USE_UBICOM_SDK
-	#include "UbiSoftMemory.h"									// GS_WIN32
+	#include "UbisoftMemory.h"									// GS_WIN32
 	#include "cdkeydefines.h"										// UBI.com AUTHORIZATION_ID_SIZE
 	#include "NewUbisoftClient.h"								// NewUbisoftClient
 #else

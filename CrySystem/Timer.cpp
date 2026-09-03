@@ -11,7 +11,7 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "Timer.h"
 #include <ISystem.h>
 #include <IConsole.h>
@@ -244,7 +244,11 @@ float CTimer::MeasureTime(LPCSTR szComment)
   if(szComment==(LPCSTR)-1)
     szComment=0;
 
-  int nRecursionLevel = (int)m_pSystem->GetIRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
+  // [webport] EF_Query is declared "void *EF_Query(int,int)" but encodes a
+  // small integer in the pointer for scalar queries like EFQ_RecurseLevel.
+  // Casting the pointer straight to int is a truncating conversion on 64-bit.
+  // Going via INT_PTR keeps the value intact and states the intent.
+  int nRecursionLevel = (int)(INT_PTR)m_pSystem->GetIRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
 	if(nRecursionLevel>0)
 		return 0;
 

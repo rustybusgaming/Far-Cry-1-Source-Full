@@ -17,6 +17,17 @@
 # pragma once
 #endif
 
+// [webport] DirectInput does not exist outside Windows and is replaced
+// wholesale by the browser backend in WebInput.h. DInputCompat.h supplies only
+// the opaque handle types this header's own declarations mention (m_g_pdi
+// below), so that the files which never touch an input device still compile.
+//
+// It sits OUTSIDE the #ifdef WIN32 on purpose: nested inside it, the include
+// was skipped on every non-Windows build, which is precisely when it is needed.
+#if defined(LINUX)
+#include "DInputCompat.h"
+#endif
+
 #ifndef _XBOX
 #ifdef WIN32
 #include <dinput.h>

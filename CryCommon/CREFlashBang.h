@@ -8,6 +8,11 @@ CODER: Tiago Sousa
 Last Update: 15/04/2003
 =====================================================================
 */
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "IRenderer.h"
+
 
 #ifndef __CREFLASHBANG_H__
 #define __CREFLASHBANG_H__

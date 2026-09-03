@@ -10,6 +10,21 @@
 //
 //////////////////////////////////////////////////////////////////////
 
+// [webport] Canonical entry point for the math template cluster.
+//
+// Cry_Vector2/3, Cry_Quat and Cry_Matrix are mutually recursive, and several
+// of them need COMPLETE types from each other (Quaternion_tpl stores a Vec3
+// by value), not just declarations. Exactly one include order satisfies all of
+// them, and Cry_Math.h is the header that establishes it.
+//
+// This include sits ABOVE the include guard on purpose. If it sat below, the
+// guard would already be set when the cluster recursed back into this header,
+// the body would be skipped, and the type would still be incomplete at the
+// point of use -- the deadlock that made these four headers unbuildable
+// standalone. Hoisting it means any entry point funnels through Cry_Math.h's
+// ordering, and the redundant re-entry here is a cheap no-op.
+#include "Cry_Math.h"
+
 #ifndef VECTOR_H
 #define VECTOR_H
 
@@ -17,6 +32,7 @@
 # pragma once
 #endif
 
+#include "Cry_MathFwd.h"   // [webport] declarations for the math cluster
 #include "platform.h"
 #include <math.h>
 #include "Cry_Matrix.h" 
@@ -329,10 +345,13 @@ typedef Vec3_f64 vectorr;
 typedef Vec3_tpl<int>		vectori;
 
 
-inline Vec3_tpl<f32>::Vec3_tpl(type_min) { x=y=z=-3.3E38f; }
-inline Vec3_tpl<f32>::Vec3_tpl(type_max) { x=y=z=3.3E38f; }
-inline Vec3_tpl<f64>::Vec3_tpl(type_min) { x=y=z=-1.7E308; }
-inline Vec3_tpl<f64>::Vec3_tpl(type_max) { x=y=z=1.7E308; }
+// [webport] These are explicit specializations of a constructor of the
+// Vec3_tpl class template, so C++ requires the "template<>" introducer.
+// MSVC 7.1 accepted the bare form; clang rejects it.
+template<> inline Vec3_tpl<f32>::Vec3_tpl(type_min) { x=y=z=-3.3E38f; }
+template<> inline Vec3_tpl<f32>::Vec3_tpl(type_max) { x=y=z=3.3E38f; }
+template<> inline Vec3_tpl<f64>::Vec3_tpl(type_min) { x=y=z=-1.7E308; }
+template<> inline Vec3_tpl<f64>::Vec3_tpl(type_max) { x=y=z=1.7E308; }
 
 template<class F> 
 ILINE F GetLengthSquared( const Vec3_tpl<F> &v ) { return v.x*v.x + v.y*v.y + v.z*v.z; }
@@ -417,6 +436,15 @@ ILINE  Vec3_tpl<F> GetOrthogonal( const Vec3_tpl<F>& v ) {
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+// [webport] Snap_s180 is defined further down this header, but
+// Ang3_tpl::Snap180 calls it from a template member above that point. Under
+// two-phase lookup a non-dependent call like Snap_s180(this->x) must be
+// visible at the point of DEFINITION -- ADL cannot rescue it, because f32 is
+// a fundamental type with no associated namespace. MSVC 7.1 deferred the
+// lookup to instantiation and found it. Declaring it up front fixes the order.
+ILINE f32 Snap_s180( f32 val );
+ILINE f32 Snap_s360( f32 val );
+
 // struct Ang3_tpl
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -771,6 +799,24 @@ struct Plane
 	}
 
 };
+
+//////////////////////////////////////////////////////////////////////////
+// [webport] Namespace-scope declarations for struct Plane's inline friends.
+//
+// A friend function DEFINED inside a class is not visible to ordinary
+// unqualified lookup -- it can only be found by argument-dependent lookup on
+// its own parameter types. GetPlane() takes Vec3 parameters, not Plane ones,
+// so ADL searches Vec3's scope and never reaches Plane. Every unqualified
+// call to GetPlane() in Cry_GeoOverlap.h and AABBSV.h therefore fails.
+//
+// MSVC 7.1 implemented the pre-standard rule that injected friend names into
+// the enclosing namespace, which is why this ever compiled. Declaring them
+// here restores visibility without moving the definitions; operator== is
+// found by ADL already (its parameters ARE Planes) and needs no declaration.
+//////////////////////////////////////////////////////////////////////////
+ILINE Plane GetPlane( const Vec3 &normal, const Vec3 &point );
+ILINE Plane GetPlane( const Vec3 &v0, const Vec3 &v1, const Vec3 &v2 );
+
 
 
 

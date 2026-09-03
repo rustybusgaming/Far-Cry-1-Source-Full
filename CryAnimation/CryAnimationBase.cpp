@@ -15,7 +15,7 @@
 
 #include "stdafx.h"
 #include <stdarg.h>
-#include "CVars.h"
+#include "cvars.h"
 #include "CryCharManager.h"
 #include "CryAnimationBase.h"
 //#include "CryAnimation.h"

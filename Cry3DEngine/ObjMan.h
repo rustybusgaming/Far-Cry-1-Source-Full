@@ -17,7 +17,7 @@
 #define CObjManager_H
 
 #include "StatObj.h"
-#include "../RenderDll/Common/shadow_renderer.h"
+#include "../RenderDll/Common/Shadow_Renderer.h"
 #include "terrain_sector.h"
 
 #define   ENTITY_MAX_DIST_FACTOR 100
@@ -79,7 +79,10 @@ public:
   void RegisterEntity( IEntityRender* pEntityRS );
   bool UnRegisterEntity( IEntityRender* pEntityRS );
 
-  CStatObj * CObjManager::MakeObject(const char * __szFileName, const char * _szGeomName=0,
+  // [webport] Dropped the "CObjManager::" qualifier -- a member declared
+  // inside its own class must not be qualified. Same ill-formed pattern MSVC
+  // 7.1 accepted in Stream.h and IShader.h.
+  CStatObj * MakeObject(const char * __szFileName, const char * _szGeomName=0,
     EVertsSharing eVertsSharing = evs_NoSharing,
     bool bLoadAdditinalInfo = true,
     bool bKeepInLocalSpace = false,

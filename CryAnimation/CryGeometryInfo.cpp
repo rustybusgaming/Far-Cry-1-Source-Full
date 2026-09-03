@@ -25,7 +25,7 @@
 #include "CrySkinFull.h"
 #include "CryBone.h"
 #include "RenderUtils.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "CryCompiledFile.h"
 
 CryGeometryInfo::CryGeometryInfo():
@@ -1143,6 +1143,20 @@ void CryGeometryInfo::exportASC (FILE* f)
 }
 
 // vlad: I placed it temporary here because of Timur chandes in rc.exe
+// [webport] One definition of this destructor, not two.
+//
+// CIndexedMesh is a single class from CryCommon/MeshIdx.h, but both this module
+// and Cry3DEngine (Meshidx.cpp) define its destructor. Per-DLL linkage kept the
+// duplicates apart; one link unit cannot.
+//
+// Cry3DEngine's is kept because it is the more complete of the two: this copy is
+// missing the "if (m_pColorSec) free(m_pColorSec);" that Cry3DEngine's has.
+// Nothing in this source drop ever allocates m_pColorSec -- it is only ever set
+// to NULL -- so no memory is leaking today, but keeping the version that frees
+// every member is the one that stays correct if that changes.
+//
+// The class layout is identical either way; it comes from the shared header.
+#if !defined(_CRY_STATIC_MODULES)
 CIndexedMesh::~CIndexedMesh()
 {
 	if(m_pFaces)
@@ -1185,3 +1199,4 @@ CIndexedMesh::~CIndexedMesh()
 	delete m_tgtLSources[i];
 	}*/
 }
+#endif // !_CRY_STATIC_MODULES

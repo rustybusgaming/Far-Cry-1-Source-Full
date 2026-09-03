@@ -629,7 +629,12 @@ static int io_debug (lua_State *L) {
 #define LEVELS1	12	/* size of the first part of the stack */
 #define LEVELS2	10	/* size of the second part of the stack */
 
-int errorfb (lua_State *L) {
+/* WEB PORT: errorfb is the one function here that crosses the module boundary
+** without an API macro -- CScriptSystem::RegisterErrorHandler declares it as
+** extern "C" and installs it as Lua's error handler. Marked explicitly so its
+** linkage matches now that this file is compiled as C++.
+*/
+extern "C" int errorfb (lua_State *L) {
 #ifdef PS2
       OutputDebugString("Not implemented");
 #else

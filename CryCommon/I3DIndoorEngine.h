@@ -13,6 +13,16 @@
 #ifndef INDOORINTERFACE_H
 #define INDOORINTERFACE_H
 
+
+
+// [webport] Not self-contained: names CCamera but included nothing,
+// relying on the .vcproj compile order. Added its real dependency.
+#include "Cry_Camera.h"
+
+// [webport] Not self-contained: names Vec3_tpl but included nothing,
+// relying on the .vcproj compile order. Added its real dependency.
+#include "Cry_Math.h"
+
 #if _MSC_VER > 1000
 # pragma once
 #endif
@@ -401,14 +411,18 @@ struct IIndoorBase
 
 };
 
-#ifndef _XBOX
+// [webport] LINUX added to the "no __declspec" branch. Shared-object symbol
+// visibility on ELF is not expressed with dllexport/dllimport, and in a wasm
+// build every module is statically linked into one unit anyway. This mirrors
+// what CryPhysics.h already does for CRYPHYSICS_API on Linux.
+#if defined(_XBOX) || defined(LINUX)
+#define CRYINDOORENGINE_API
+#else
 #ifdef CRYINDOORENGINE_EXPORTS
 #define CRYINDOORENGINE_API __declspec(dllexport)
 #else
 #define CRYINDOORENGINE_API __declspec(dllimport)
 #endif
-#else
-#define CRYINDOORENGINE_API
 #endif
 
 //////////////////////////////////////////////////////////////////////

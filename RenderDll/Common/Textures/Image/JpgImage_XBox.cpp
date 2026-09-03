@@ -15,7 +15,7 @@
 
 extern "C"
 {
-  #include "Jpeg6/Jpeglib.h"
+  #include "jpeg6/jpeglib.h"
   #include "Jmemsrc.c" // include buffer source input code
 }
 

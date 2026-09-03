@@ -10,6 +10,25 @@
 #endif // _MSC_VER > 1000
 #include <IInput.h>
 
+// [webport] On the web build CXKeyboard IS CWebKeyboard.
+//
+// DirectInput is replaced outright rather than emulated (see WebInput.h), and
+// the replacement implements the same IKeyboard/IMouse interfaces plus the
+// handful of extra methods CInput calls. Aliasing the name here means CInput
+// and the action-map code pick up the browser device with no changes of their
+// own, and the DirectInput implementation below is simply not compiled.
+#if defined(LINUX)
+#include "WebInput.h"
+typedef CWebKeyboard CXKeyboard;
+#else
+
+// [webport] These headers name LPDIRECTINPUT8 in Init() declarations that the
+// web build never calls. See DInputCompat.h -- opaque types only, not an
+// emulation layer.
+#if defined(LINUX)
+#include "DInputCompat.h"
+#endif
+
 #ifdef PS2
 
 #include "Joystick.h"
@@ -164,5 +183,7 @@ private:
 #endif	
 
 };
+
+#endif // !LINUX -- DirectInput implementation above
 
 #endif // !defined(AFX_XKEYBOARD_H__9C0FD463_ECC8_42DA_8019_378651B00771__INCLUDED_)

@@ -50,7 +50,7 @@ struct CryAnimVars
 #define DECLARE_INT_VARIABLE(_var, _default) ICVar* m_##_var; int _var() {return m_##_var->GetIVal();}
 #define DECLARE_FLOAT_VARIABLE(_var, _default,_comment) ICVar* m_##_var; float _var() {return m_##_var->GetFVal();}
 #define DECLARE_FLOAT_VARIABLE_DUMP(_var, _default,_comment) DECLARE_FLOAT_VARIABLE(_var, _default,_comment)
-#include "CVars-list.h"
+#include "cvars-list.h"
 #undef DECLARE_STRING_VARIABLE
 #undef DECLARE_INT_VARIABLE
 #undef DECLARE_FLOAT_VARIABLE

@@ -46,7 +46,11 @@ class IPhysicalWorld;
 struct IMemoryManager;
 struct ISoundSystem;
 struct IMusicSystem;
-struct XDOM::IXMLDOMDocument;
+// [webport] A qualified name cannot be forward-declared: "struct
+// XDOM::IXMLDOMDocument;" is ill-formed because it neither defines XDOM nor
+// declares a member of it. The declaration has to be made inside the
+// namespace, which is what IXMLDOM.h:22 opens.
+namespace XDOM { struct IXMLDOMDocument; }
 struct IFrameProfileSystem;
 struct FrameProfiler;
 struct IStreamEngine;

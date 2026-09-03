@@ -85,7 +85,7 @@ typedef enum
  {
 # define CG_ERROR_MACRO(code, enum_name, new_enum_name, message) \
    cg##enum_name = code,
-# include <Cg/cg_errors.h>
+# include <cg_errors.h>
  } cgError;
 
 typedef struct
@@ -114,7 +114,7 @@ typedef enum
 # define CG_DATATYPE_MACRO(name, compiler_name, enum_name, ncols, nrows) \
   cg##name##ValueType,
 
-#include <Cg/cg_datatypes.h>
+#include <cg_datatypes.h>
  } cgValueType;
 
 typedef enum
@@ -134,7 +134,7 @@ typedef enum
 # define CG_BINDLOCATION_MACRO(name,enum_name,compiler_name,\
                                enum_int,addressable,param_type) \
   cgBind##name = enum_int,
-#include <Cg/cg_bindlocations.h>
+#include <cg_bindlocations.h>
 
   cgBindUndefined
  } cgBindLocation;
@@ -149,7 +149,7 @@ typedef enum
 
 # define CG_PROFILE_MACRO(name, compiler_id, compiler_id_caps, compiler_opt,int_id,vertex_profile) \
    cg##name##Profile = int_id,
-# include "Cg/cg_profiles.h"
+# include "cg_profiles.h"
 
   cgNProfiles,
  } cgProfileType;

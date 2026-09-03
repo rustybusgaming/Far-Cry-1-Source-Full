@@ -770,16 +770,26 @@ public:
 		return length;
 	}
 
-	string ::iterator begin ()
+	// [webport] These were declared "string::iterator" but are all derived from
+	// _buffer, a plain char*. MSVC 7.1's std::string::iterator WAS a char*
+	// typedef, so "string::iterator it = _buffer + n" compiled; libstdc++ makes
+	// it a class that is not constructible from a pointer, and the "found >= end"
+	// comparisons below need raw pointers too.
+	//
+	// char* is what these actually are -- the sibling accessors getBufferPos()
+	// and getLastBufferPos() already return char* for the same two values. The
+	// search-string iterators at the std::search call sites stay as real
+	// std::string iterators; std::search permits its two ranges to differ.
+	char * begin ()
 	{
-		string::iterator buf = _buffer;
-		return string::iterator(buf);
+		char * buf = _buffer;
+		return buf;
 	}
 
-	string ::iterator end ()
+	char * end ()
 	{
-		string::iterator buf = _buffer + _parseLength;
-		return string::iterator(buf);
+		char * buf = _buffer + _parseLength;
+		return buf;
 	}
 
 	long find ( char srchChar, long offset, long length = -1 )
@@ -790,11 +800,11 @@ public:
 			length = getOffsetLength(offset);
 
 		// set start and end of search 
-		string::iterator start = _buffer + offset;
-		string::iterator end   = _buffer + (offset + length);
+		char * start = _buffer + offset;
+		char * end   = _buffer + (offset + length);
 
 		// search for it
-		string::iterator found = std::find( start, end, srchChar );
+		char * found = std::find( start, end, srchChar );
 
 		// if at end did not find it
 		if ( found >= end )
@@ -823,15 +833,15 @@ public:
 			length = getOffsetLength(offset);
 
 		// set start and end of search 
-		string::iterator start = _buffer + offset;
-		string::iterator end   = _buffer + (offset + length);
+		char * start = _buffer + offset;
+		char * end   = _buffer + (offset + length);
 
 
-		string::iterator srchStart = srchStr;
-		string::iterator srchEnd   = srchStr + strlen(srchStr);
+		char * srchStart = srchStr;
+		char * srchEnd   = srchStr + strlen(srchStr);
 
 		// search for it
-		string::iterator found = std::search( start, end, srchStart, srchEnd );
+		char * found = std::search( start, end, srchStart, srchEnd );
 
 		// if at end did not find it
 		if ( found >= end )
@@ -860,15 +870,15 @@ public:
 			length = getOffsetLength(offset);
 
 		// set start and end of search 
-		string::iterator start = _buffer + offset;
-		string::iterator end   = _buffer + (offset + length);
+		char * start = _buffer + offset;
+		char * end   = _buffer + (offset + length);
 
 
 		string::iterator srchStart = srchStr.begin();
 		string::iterator srchEnd   = srchStr.end();
 
 		// search for it
-		string::iterator found = std::search( start, end, srchStart, srchEnd );
+		char * found = std::search( start, end, srchStart, srchEnd );
 
 		// if at end did not find it
 		if ( found >= end )

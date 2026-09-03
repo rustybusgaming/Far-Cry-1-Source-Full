@@ -54,7 +54,7 @@
 
 #if WIN32
 
-#include <Cg/cg.h>
+#include <cg.h>
 #include <assert.h>
 
 
@@ -72,8 +72,8 @@
 
 #define MAX_STREAMS 16
 
-#include <Cg/cgProgramManager.h>
-#include <Cg/cgContextManager.h>
+#include <cgProgramManager.h>
+#include <cgContextManager.h>
            
 
 

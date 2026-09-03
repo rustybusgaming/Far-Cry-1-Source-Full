@@ -298,7 +298,15 @@ template <typename F> struct OBB_tpl {
 	//default OBB constructor (without initialisation)
 	inline OBB_tpl() {}
 
-	ILINE void SetOBB( const Matrix33& m33, const Vec3& hlv, const Vec3& center  ) {  m33=m33; h=hlv; c=center;	}
+	// [webport] BUG FIX: the parameter "m33" shadows the member of the same
+	// name, so the original "m33=m33" self-assigned the const parameter --
+	// which cannot compile, and would never have set the member even if it
+	// did. SetOBB() therefore left the orientation matrix uninitialised.
+	//
+	// This went unnoticed because OBB_tpl is a class template and this member
+	// was never instantiated, so the body was never type-checked. Qualifying
+	// with this-> assigns the member, matching CreateOBB() just below.
+	ILINE void SetOBB( const Matrix33& m33, const Vec3& hlv, const Vec3& center  ) {  this->m33=m33; h=hlv; c=center;	}
 	ILINE static OBB_tpl<F> CreateOBB( const Matrix33& m33, const Vec3& hlv, const Vec3& center  ) {	OBB_tpl<f32> obb; obb.m33=m33; obb.h=hlv; obb.c=center; return obb;	}
 
 	ILINE void SetOBBfromAABB( const Matrix33& mat33, const AABB& aabb ) {

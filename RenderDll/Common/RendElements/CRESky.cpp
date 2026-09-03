@@ -1,7 +1,7 @@
 #include "RenderPCH.h"
 #include "RendElement.h"
 #include "CRESky.h"
-#include "i3dengine.h"
+#include "I3DEngine.h"
 
 void CRESky::mfPrepare()
 {
@@ -77,7 +77,10 @@ bool CRESky::mfDraw(SShader *ef, SShaderPass *sfm)
 
 		gRenDev->SetTexture(ef->m_Sky->m_SkyBox[2]->m_Bind);
 		gRenDev->SetTexClampMode(true);
-		gRenDev->DrawTriStrip(&(CVertexBuffer (data,VERTEX_FORMAT_P3F_TEX2F)),4);
+		// [webport] Address of a temporary; DrawTriStrip only reads the buffer
+		// during the call, so a named local is equivalent and valid.
+		CVertexBuffer vbSky(data,VERTEX_FORMAT_P3F_TEX2F);
+		gRenDev->DrawTriStrip(&vbSky,4);
 	}
 
 	Vec3d camera = gRenDev->GetCamera().GetPos();
@@ -110,7 +113,10 @@ bool CRESky::mfDraw(SShader *ef, SShaderPass *sfm)
 
 		gRenDev->SetTexture(ef->m_Sky->m_SkyBox[1]->m_Bind);
 		gRenDev->SetTexClampMode(true);
-		gRenDev->DrawTriStrip(&(CVertexBuffer (data,VERTEX_FORMAT_P3F_TEX2F)),6);
+		// [webport] Address of a temporary; a named local is valid and lives
+		// across the call, which is all DrawTriStrip needs.
+		CVertexBuffer vbSky1(data,VERTEX_FORMAT_P3F_TEX2F);
+		gRenDev->DrawTriStrip(&vbSky1,6);
 	}
 	{ // e
 		struct_VERTEX_FORMAT_P3F_TEX2F data[] = 
@@ -125,7 +131,10 @@ bool CRESky::mfDraw(SShader *ef, SShaderPass *sfm)
 
 		gRenDev->SetTexture(ef->m_Sky->m_SkyBox[1]->m_Bind);
 		gRenDev->SetTexClampMode(true);
-		gRenDev->DrawTriStrip(&(CVertexBuffer (data,VERTEX_FORMAT_P3F_TEX2F)),6);
+		// [webport] Address of a temporary; a named local is valid and lives
+		// across the call, which is all DrawTriStrip needs.
+		CVertexBuffer vbSky2(data,VERTEX_FORMAT_P3F_TEX2F);
+		gRenDev->DrawTriStrip(&vbSky2,6);
 	}
 	{ // n
 		struct_VERTEX_FORMAT_P3F_TEX2F data[] = 
@@ -140,7 +149,10 @@ bool CRESky::mfDraw(SShader *ef, SShaderPass *sfm)
 
 		gRenDev->SetTexture(ef->m_Sky->m_SkyBox[0]->m_Bind);
 		gRenDev->SetTexClampMode(true);
-		gRenDev->DrawTriStrip(&(CVertexBuffer (data,VERTEX_FORMAT_P3F_TEX2F)),6);
+		// [webport] Address of a temporary; a named local is valid and lives
+		// across the call, which is all DrawTriStrip needs.
+		CVertexBuffer vbSky3(data,VERTEX_FORMAT_P3F_TEX2F);
+		gRenDev->DrawTriStrip(&vbSky3,6);
 	}
 	{ // w
 		struct_VERTEX_FORMAT_P3F_TEX2F data[] = 
@@ -155,7 +167,10 @@ bool CRESky::mfDraw(SShader *ef, SShaderPass *sfm)
 
 		gRenDev->SetTexture(ef->m_Sky->m_SkyBox[0]->m_Bind);
 		gRenDev->SetTexClampMode(true);
-		gRenDev->DrawTriStrip(&(CVertexBuffer (data,VERTEX_FORMAT_P3F_TEX2F)),6);
+		// [webport] Address of a temporary; a named local is valid and lives
+		// across the call, which is all DrawTriStrip needs.
+		CVertexBuffer vbSky4(data,VERTEX_FORMAT_P3F_TEX2F);
+		gRenDev->DrawTriStrip(&vbSky4,6);
 	}
 #if !defined(PS2) && !defined (GC) && !defined (NULL_RENDERER)
   if (fpSky)
@@ -244,8 +259,14 @@ bool CRESky::DrawFogLayer()
 	gRenDev->SelectTMU(0);
   gRenDev->m_TexMan->m_Text_White->Set();
 	gRenDev->EnableTMU(true);
-	gRenDev->DrawTriStrip(&(CVertexBuffer (m_parrFogLayer->GetElements(),VERTEX_FORMAT_P3F_COL4UB)),m_parrFogLayer->Count());
-	gRenDev->DrawTriStrip(&(CVertexBuffer (m_parrFogLayer2->GetElements(),VERTEX_FORMAT_P3F_COL4UB)),m_parrFogLayer2->Count());
+	// [webport] Address of a temporary; a named local is valid and lives
+	// across the call, which is all DrawTriStrip needs.
+	CVertexBuffer vbSky5(m_parrFogLayer->GetElements(),VERTEX_FORMAT_P3F_COL4UB);
+	gRenDev->DrawTriStrip(&vbSky5,m_parrFogLayer->Count());
+	// [webport] Address of a temporary; a named local is valid and lives
+	// across the call, which is all DrawTriStrip needs.
+	CVertexBuffer vbSky6(m_parrFogLayer2->GetElements(),VERTEX_FORMAT_P3F_COL4UB);
+	gRenDev->DrawTriStrip(&vbSky6,m_parrFogLayer2->Count());
 
 #if !defined(PS2) && !defined (GC) && !defined (NULL_RENDERER)
   if (fpSky)
@@ -278,7 +299,10 @@ bool CRESky::DrawBlackPortal()
 		gRenDev->SetCullMode(R_CULL_NONE);
 		gRenDev->SelectTMU(0);
 		gRenDev->EnableTMU(false);
-		gRenDev->DrawTriStrip(&(CVertexBuffer (m_arrvPortalVerts[i],VERTEX_FORMAT_P3F_COL4UB)),4);
+		// [webport] Address of a temporary; a named local is valid and lives
+		// across the call, which is all DrawTriStrip needs.
+		CVertexBuffer vbSky7(m_arrvPortalVerts[i],VERTEX_FORMAT_P3F_COL4UB);
+		gRenDev->DrawTriStrip(&vbSky7,4);
 	}
 	return true;
 }
@@ -321,6 +345,9 @@ void CRESky::DrawSkySphere(float fHeight)
 			lstVertData.Add(vert);
 		}
 
-		gRenDev->DrawTriStrip(&CVertexBuffer(&lstVertData[0],VERTEX_FORMAT_P3F_COL4UB),lstVertData.Count());
+		// [webport] Address of a temporary (written without the extra parens the
+		// other call sites use).
+		CVertexBuffer vbSkyLast(&lstVertData[0],VERTEX_FORMAT_P3F_COL4UB);
+		gRenDev->DrawTriStrip(&vbSkyLast,lstVertData.Count());
 	}
 }

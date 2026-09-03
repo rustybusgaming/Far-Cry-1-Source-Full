@@ -78,9 +78,9 @@ cgContextManager - a class for loading various cg programs,
 #include <d3d8.h>
 #include <d3dx8.h>
 
-#include <Cg/cgTemplates.h>
-#include <Cg/cg.h>
-#include <Cg/cgProgramManager.h>
+#include <cgTemplates.h>
+#include <cg.h>
+#include <cgProgramManager.h>
 
 
  

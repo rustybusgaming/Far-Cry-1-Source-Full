@@ -1,8 +1,12 @@
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "Input.h"
 #include <ILog.h>
 
+// [webport] Xtl.h is the Xbox SDK header; it has no business being included
+// unconditionally. The gamepad code below is already _XBOX-guarded.
+#ifdef _XBOX
 #include <Xtl.h>
+#endif
 
 #include "XGamepad.h"
 

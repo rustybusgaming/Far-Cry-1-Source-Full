@@ -11,7 +11,7 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "System.h"
 #include <time.h>
 //#include "ini_vars.h"
@@ -48,7 +48,7 @@
 #include "CrySizerImpl.h"
 #include "DownloadManager.h"
 
-#include "XML\Xml.h"
+#include "XML/xml.h"
 #include "DataProbe.h"
 #include "ApplicationHelper.h"			// CApplicationHelper
 
@@ -81,8 +81,8 @@ CMTSafeHeap* g_pSmallHeap;
 #define DLL_GAME_ENTRANCE_FUNCTION	"CreateGameInstance"
 
 #ifdef WIN32
-#include "luadebugger/luadbginterface.h"
-#include "luadebugger/LuaDbg.h"
+#include "LuaDebugger/LuaDbgInterface.h"
+#include "LuaDebugger/LUADBG.h"
 extern HMODULE gDLLHandle;
 #endif
 

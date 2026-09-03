@@ -191,7 +191,7 @@ typedef std::wstring wstring;
 #ifdef _XBOX
 #define _CPU_X86
 #include <xtl.h>
-#include "XBoxSpecific.h"
+#include "XboxSpecific.h"
 #endif
 
 
@@ -200,9 +200,17 @@ typedef std::wstring wstring;
 
 // macro for structure alignement
 #ifdef LINUX
-#define DEFINE_ALIGNED_DATA( type, name, alignment ) type name __attribute__ ((aligned(alignment)));
-#define DEFINE_ALIGNED_DATA_STATIC( type, name, alignment ) static type name __attribute__ ((aligned(alignment)));
-#define DEFINE_ALIGNED_DATA_CONST( type, name, alignment ) const type name __attribute__ ((aligned(alignment)));
+// [webport] The attribute is placed BETWEEN the type and the name, not after
+// the name as it was written originally.
+//
+// Trailing placement parses only for a bare declarator. These macros are also
+// used with a constructor initialiser --
+//     DEFINE_ALIGNED_DATA_STATIC( Matrix44, sIdentityMatrix( 1,0,0,0, ... ), 16 )
+// -- which expands to "static Matrix44 name(args) __attribute__((aligned(16)));"
+// and is a syntax error. Between type and name is valid in both forms.
+#define DEFINE_ALIGNED_DATA( type, name, alignment ) type __attribute__ ((aligned(alignment))) name;
+#define DEFINE_ALIGNED_DATA_STATIC( type, name, alignment ) static type __attribute__ ((aligned(alignment))) name;
+#define DEFINE_ALIGNED_DATA_CONST( type, name, alignment ) const type __attribute__ ((aligned(alignment))) name;
 #else
 #define DEFINE_ALIGNED_DATA( type, name, alignment ) _declspec(align(alignment)) type name;
 #define DEFINE_ALIGNED_DATA_STATIC( type, name, alignment ) static _declspec(align(alignment)) type name;
@@ -215,6 +223,13 @@ typedef std::wstring wstring;
 ///////////////////////////////////////////////////////////////////////////////
 typedef double real;
 typedef int index_t;
+// [webport] uchar was declared only in IRenderer.h, so ColorDefs.h -- which
+// needs nothing else from the renderer -- had to include the entire renderer
+// interface to get it. That inverted the dependency direction and put
+// IRenderer.h ahead of RendElement.h's own struct definitions, breaking the
+// header cycle. It is a scalar alias and belongs here with real and index_t;
+// IRenderer.h's identical typedef remains valid and harmless.
+typedef unsigned char uchar;
 typedef int                 INT;
 typedef unsigned int        UINT;
 typedef unsigned int        *PUINT;

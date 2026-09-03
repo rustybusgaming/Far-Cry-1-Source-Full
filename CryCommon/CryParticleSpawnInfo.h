@@ -16,6 +16,11 @@
 //    simply passing the structure from one function to another.
 //
 //////////////////////////////////////////////////////////////////////
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "Cry_Math.h"
+
 
 #ifndef __CRY_COMMON_PARTICLE_SPAWN_INFO_HDR__
 #define __CRY_COMMON_PARTICLE_SPAWN_INFO_HDR__

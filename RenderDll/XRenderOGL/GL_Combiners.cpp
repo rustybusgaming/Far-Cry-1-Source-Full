@@ -2,7 +2,7 @@
 #include "RenderPCH.h"
 #include "GL_Renderer.h"
 
-#include "NVParse\nvparse.h"
+#include "NVParse/nvparse.h"
 
 void build_normalize_combiner_dlist()
 {

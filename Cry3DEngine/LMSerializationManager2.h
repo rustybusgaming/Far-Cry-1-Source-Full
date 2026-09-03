@@ -126,7 +126,12 @@ protected:
 		unsigned char ucOcclCount/*1..4*/;
 		UVSetHeader3():ucOcclCount(0)
 		{
-			UVSetHeader::UVSetHeader();
+			// [webport] Removed "UVSetHeader::UVSetHeader();". A base
+			// constructor cannot be invoked as a statement -- it is
+			// ill-formed, and the base is default-constructed automatically
+			// before this body runs anyway. UVSetHeader's own default ctor
+			// already zeroes all three of its members, so behaviour is
+			// unchanged.
 			OcclIds[0] = OcclIds[1] = OcclIds[2] = OcclIds[3] = 0;
 		}
 	};

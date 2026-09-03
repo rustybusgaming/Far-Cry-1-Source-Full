@@ -1,7 +1,12 @@
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "IRenderer.h"
+
 #ifndef _CRE2DQuad_H_
 #define _CRE2DQuad_H_
 
-#include "vertexformats.h"
+#include "VertexFormats.h"
 
 class CRE2DQuad: public CRendElement
 {

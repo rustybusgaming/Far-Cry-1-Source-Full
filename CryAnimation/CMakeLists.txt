@@ -1,0 +1,88 @@
+################################################################################
+# CryAnimation -- character animation: bones, controllers, model states, IK,
+# and the physics-driven auxiliary bodies.
+#
+# Compiles, does not link: like the other engine modules it calls into code that
+# is not ported yet. Compiling is the milestone.
+################################################################################
+
+cry_add_module(CryAnimation
+    SOURCES
+    AnimObject.cpp
+    AnimObjectLoader.cpp
+    AnimObjectManager.cpp
+    BSplineKnots.cpp
+    BSplineOpen.cpp
+    BSplineVec3dPacked.cpp
+    BoneLightBindInfo.cpp
+    BoneLightDynamicBind.cpp
+    CgfUtils.cpp
+    ChunkFileReader.cpp
+    Controller.cpp
+    ControllerCryBone.cpp
+    ControllerManager.cpp
+    ControllerPackedBSpline.cpp
+    ControllerTCB.cpp
+    CryAnimationBase.cpp
+    CryBone.cpp
+    CryBoneDesc.cpp
+    CryBoneHierarchyLoader.cpp
+    CryBoneInfo.cpp
+    CryCharBody.cpp
+    CryCharDecal.cpp
+    CryCharDecalBuilder.cpp
+    CryCharDecalManager.cpp
+    CryCharFxTrail.cpp
+    CryCharInstance.cpp
+    CryCharInstanceRenderParams.cpp
+    CryCharManager.cpp
+    CryCharParticleManager.cpp
+    CryCharReShadowManager.cpp
+    CryCharReShadowVolume.cpp
+    CryCharRenderElement.cpp
+    CryGeomMorphTarget.cpp
+    CryGeometryInfo.cpp
+    CryKeyInterpolation.cpp
+    CryModEffAnimation.cpp
+    CryModEffIKSolver.cpp
+    CryModEffMorph.cpp
+    CryModel-Data.cpp
+    CryModel.cpp
+    CryModelAnimationContainer.cpp
+    CryModelArrays.cpp
+    CryModelGeometryLoader.cpp
+    CryModelLoader.cpp
+    CryModelShadowVolume.cpp
+    CryModelState.cpp
+    CryModelStatePhys.cpp
+    CryModelSubmesh.cpp
+    CrySkinBase.cpp
+    CrySkinBasisBuilder.cpp
+    CrySkinBuilder.cpp
+    CrySkinBuilderBase.cpp
+    CrySkinFull.cpp
+    CrySkinMorph.cpp
+    CrySkinMorphBuilder.cpp
+    CrySkinRigidBasis.cpp
+    CryVertexBinding.cpp
+    DebugUtils.cpp
+    FileMapping.cpp
+    IncContHeap.cpp
+    MathUtils.cpp
+    QuaternionExponentX87.cpp
+    RenderUtils.cpp
+    SSEUtils.cpp
+    SimpleFrameProfiler.cpp
+    VertexBufferArrayDrivers.cpp
+    XBoxExport.cpp
+    cvars.cpp
+    drand.cpp
+    makepath.cpp
+    splitpath.cpp
+    stdafx.cpp
+    INCLUDES
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+
+    DEPENDS
+        CryCommon
+)

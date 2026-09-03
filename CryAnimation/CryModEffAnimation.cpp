@@ -12,7 +12,7 @@
 #include "CryModEffector.h"
 #include "CryModEffAnimation.h"
 #include "CryModel.h"
-#include "CVars.h"
+#include "cvars.h"
 
 CCryModEffAnimation::CCryModEffAnimation (CryModelState* pParent):
 //	m_bMatrixPlusInUse(false),

@@ -1,11 +1,12 @@
 // CryMemoryManager.cpp : Defines the entry point for the DLL application.
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <new.h>
+// [webport] <new.h> is the old MSVC spelling; the standard header is <new>.
+#include <new>
 
 #include <ISystem.h>
 

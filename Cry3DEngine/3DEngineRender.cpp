@@ -13,11 +13,11 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 
 #include "3dEngine.h"
-#include "objman.h"
-#include "visareas.h"
+#include "ObjMan.h"
+#include "VisAreas.h"
 #include "terrain_water.h"
 #include "partman.h"
 #include "DecalManager.h"
@@ -27,7 +27,7 @@
 
 #include "cbuffer.h"
 
-#include "watervolumes.h"
+#include "WaterVolumes.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // RenderScene
@@ -175,7 +175,9 @@ void C3DEngine::RenderScene(unsigned int dwDrawFlags)
 #endif
   
 	// it's correct only before StartEf()
-  int nRecursionLevel = (int)GetRenderer()->EF_Query(EFQ_RecurseLevel);
+  // [webport] EF_Query returns void* but carries an integer for scalar
+  // queries; cast via INT_PTR so the value survives on 64-bit. See Timer.cpp.
+  int nRecursionLevel = (int)(INT_PTR)GetRenderer()->EF_Query(EFQ_RecurseLevel);
 	assert(nRecursionLevel>=0);
 	m_pObjManager->m_nRenderStackLevel = m_pTerrain->m_nRenderStackLevel = nRecursionLevel;
 	if(m_pObjManager->m_nRenderStackLevel<0 || m_pObjManager->m_nRenderStackLevel>1)
@@ -1585,7 +1587,12 @@ void C3DEngine::DrawShadowSpotOnTerrain(Vec3d vPos, float fRadius)
 		}
 
 		if(verts.Count())
-			GetRenderer()->DrawTriStrip(&(CVertexBuffer (&verts[0].xyz.x,VERTEX_FORMAT_P3F_COL4UB_TEX2F)),verts.Count());
+		{
+			// [webport] Address of a temporary; see the same pattern in
+			// Decal.cpp. DrawTriStrip only reads the buffer during the call.
+			CVertexBuffer vbTriStrip(&verts[0].xyz.x,VERTEX_FORMAT_P3F_COL4UB_TEX2F);
+			GetRenderer()->DrawTriStrip(&vbTriStrip,verts.Count());
+		}
 	}
 }
 

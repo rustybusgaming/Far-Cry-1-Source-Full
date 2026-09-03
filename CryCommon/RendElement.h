@@ -60,6 +60,30 @@ enum EDataType
   eDATA_HDRProcess,  
 };
 
+// [webport] SMRendTexVert and SVertBufComps hoisted above this include.
+//
+// VertexFormats.h and LeafBuffer.h need these two structs, and both are pulled
+// in transitively by ColorDefs.h -> IRenderer.h below. They used to be declared
+// AFTER that include, so entering the render headers at RendElement.h reached
+// them while both structs were still undeclared.
+//
+// Neither struct depends on anything (two floats and four bools), so moving
+// them ahead of the include is the minimal way to break the cycle.
+struct SMRendTexVert
+{
+  SMRendTexVert() {}
+  SMRendTexVert (float u, float t) { vert[0] = u; vert[1] = t; }
+  float vert[2];
+};
+
+struct SVertBufComps
+{
+  bool m_bHasTC;
+  bool m_bHasColors;
+  bool m_bHasSecColors;
+  bool m_bHasNormals;
+};
+
 #include <ColorDefs.h>
 
 //=======================================================
@@ -85,12 +109,6 @@ struct SMRendVert
   };
 };
 
-struct SMRendTexVert
-{
-  SMRendTexVert() {}
-  SMRendTexVert (float u, float t) { vert[0] = u; vert[1] = t; }
-  float vert[2];
-};
 
 struct SColorVert
 {
@@ -129,13 +147,6 @@ struct SColorVert2D
 
 #define FGP_STAGE_SHIFT 0x10
 
-struct SVertBufComps
-{
-  bool m_bHasTC;
-  bool m_bHasColors;
-  bool m_bHasSecColors;
-  bool m_bHasNormals;
-};
 
 #define MAX_CUSTOM_TEX_BINDS_NUM 8
 

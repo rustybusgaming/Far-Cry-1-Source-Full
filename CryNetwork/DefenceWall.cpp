@@ -12,6 +12,10 @@
 //  History:
 //
 ////////////////////////////////////////////////////////////////////////////
+// [webport] std::replace lives in <algorithm>; MSVC's headers pulled it in
+// transitively, libstdc++ does not.
+#include <algorithm>
+
 
 #include "StdAfx.h"
 #include "DefenceWall.h"

@@ -260,9 +260,13 @@ class dbg_allocator: public std::allocator<T>
 		{	// construct from a related allocator (do nothing)
 		}
 
+		// [webport] BUG FIX: this was copy-pasted from the converting
+		// constructor above and kept its base-initializer list. Only
+		// constructors may have one, so "operator=(...) : std::allocator<T>(...)"
+		// is ill-formed. The body is documented as doing nothing and simply
+		// returns *this, so dropping the initializer preserves the behaviour.
 		template<class _Other>
-			dbg_allocator<T>& operator=(const std::allocator<_Other>&rThat):
-			std::allocator<T>(rThat)
+			dbg_allocator<T>& operator=(const std::allocator<_Other>&)
 		{	// assign from a related allocator (do nothing)
 		return (*this);
 		}
@@ -387,11 +391,23 @@ class dbg_allocator: public std::allocator<T>
 //#endif
 
 //#if (_MSC_VER >= 1300) && defined(_STRING_)
-	class string: public string
+	// [webport] BUG FIX: "class string: public string" made the class its own
+	// base, and "typedef string _Base" then named the incomplete type -- so
+	// every constructor below delegated to itself. clang reports it as an
+	// incomplete base plus a run of "delegating constructors are permitted
+	// only in C++11".
+	//
+	// The three sibling wrappers in this same #else branch (set, vector, map)
+	// all derive from the std:: type, so the qualifier was simply dropped
+	// here. This block sits in the NON-debug branch that every non-MSVC build
+	// takes, and the guard around it is commented out, so it is always active
+	// -- which is why a typo in dead-looking debug scaffolding still breaks
+	// the port.
+	class string: public std::string
 	{
 	public:
 		typedef dbg_allocator<char> _Allocator;
-		typedef string _Base;
+		typedef std::string _Base;
 		string ()
 		{
 		}

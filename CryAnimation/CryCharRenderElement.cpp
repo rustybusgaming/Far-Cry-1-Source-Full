@@ -9,7 +9,7 @@
 #include "stdafx.h"
 #include "CryAnimationBase.h"
 #include "CryCharRenderElement.h"
-#include "CVars.h"
+#include "cvars.h"
 
 CryCharRenderElement::CryCharRenderElement ():
 	m_pLeafBuffer (NULL),

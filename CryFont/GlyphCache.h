@@ -12,16 +12,23 @@
 
 
 
-#ifdef WIN64
-// Workaround for Amd64 compiler
+// [webport] LINUX now takes the same route as WIN64: <map> with hash_map
+// aliased to map.
+//
+// The old LINUX branch pulled <ext/hash_map>, which puts hash_map in
+// __gnu_cxx, not std -- so the std::hash_map typedefs below never resolved.
+// Fixing the namespace would not have been enough either: <ext/hash_map> is a
+// deprecated libstdc++ extension, and Emscripten builds against libc++, where
+// it does not exist at all. It would have broken again on the real target.
+//
+// std::map is ordered rather than hashed, so lookups are O(log n) instead of
+// O(1). For a glyph cache holding a few hundred entries that is immaterial,
+// and it is exactly the trade the WIN64 branch already accepted.
+#if defined(WIN64) || defined(LINUX)
 #include <map>
 #define hash_map map
 #else
-#if defined(LINUX)
-#include <ext/hash_map>
-#else
 #include <hash_map>
-#endif
 #endif
 
 #include <vector>

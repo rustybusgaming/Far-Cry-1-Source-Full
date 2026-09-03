@@ -1,10 +1,10 @@
 #include "stdafx.h"
 #include <CryCompiledFile.h>
-#include <stlutils.h>
+#include <StlUtils.h>
 //#include "CryAnimation.h"
 #include "ControllerManager.h"
 #include "CryModelAnimationContainer.h"
-#include "CVars.h"
+#include "cvars.h"
 #include "CryBoneInfo.h"
 #include "StringUtils.h"
 #include "CryAnimationInfo.h"

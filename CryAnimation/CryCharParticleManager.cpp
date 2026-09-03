@@ -2,7 +2,7 @@
 #include "drand.h"
 #include "MathUtils.h"
 #include "CryCharParticleManager.h"
-#include "CVars.h"
+#include "cvars.h"
 
 CryCharParticleManager::CryCharParticleManager():
 	m_numActive (0),

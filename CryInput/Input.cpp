@@ -10,8 +10,12 @@
 //	-Jan 31,2001:Created by Marco Corbetta
 //
 //////////////////////////////////////////////////////////////////////
+// [webport] std::find comes from <algorithm>. MSVC's headers pulled it in
+// transitively; libstdc++ does not, so it has to be included explicitly.
+#include <algorithm>
 
-#include "stdafx.h"
+
+#include "StdAfx.h"
 #pragma warning(disable:4786)
 #include <stdio.h>
 #include <ILog.h>
@@ -223,6 +227,14 @@ bool CInput::Init(ISystem *pSystem,HINSTANCE hinst,HWND hwnd,bool dinput)
 	m_hwnd=hwnd;
 	m_postingenable = 1;
 		
+#if defined(LINUX)
+	// [webport] There is no DirectInput to create. The devices are browser
+	// backed (CWebKeyboard/CWebMouse, aliased over CXKeyboard/CXMouse), and
+	// they take their events from DOM callbacks rather than from an acquired
+	// device object, so there is nothing to initialise here.
+	m_g_pdi = 0;
+	m_pLog->Log("Input: browser backend (no DirectInput)\n");
+#else
 	//if (dinput)
 	{
 		m_pLog->Log("Initializing Direct Input\n");
@@ -240,6 +252,7 @@ bool CInput::Init(ISystem *pSystem,HINSTANCE hinst,HWND hwnd,bool dinput)
 			return (false);
 		}			
 	}
+#endif
 	//else
 	//	return (true);
 	
@@ -247,6 +260,21 @@ bool CInput::Init(ISystem *pSystem,HINSTANCE hinst,HWND hwnd,bool dinput)
 #endif //_XBOX
 
 #ifndef _XBOX
+#if defined(LINUX)
+	// [webport] The browser devices need only the system pointer; the DOM
+	// event callbacks are registered separately by WebInput_Register().
+	if (!m_Keyboard.Init(m_pSystem))
+		return (false);
+	m_pLog->LogToFile("Keyboard initialized (browser)\n");
+
+	if (!m_Mouse.Init(m_pSystem))
+		return (false);
+	m_pLog->Log("Mouse initialized (browser)\n");
+
+#	if defined(__EMSCRIPTEN__)
+	WebInput_Register(&m_Keyboard, &m_Mouse);
+#	endif
+#else
 	//if (!m_Keyboard.Init(this,m_pLog,m_g_pdi,hinst,hwnd) && dinput) 
 	if (!m_Keyboard.Init(this,m_pSystem,m_g_pdi,hinst,hwnd) && dinput) 
 		return (false);
@@ -256,6 +284,7 @@ bool CInput::Init(ISystem *pSystem,HINSTANCE hinst,HWND hwnd,bool dinput)
 	if (!m_Mouse.Init(m_pSystem,m_g_pdi,hinst,hwnd,dinput) && dinput) 
 		return (false);
 	m_pLog->Log("Mouse initialized\n");		
+#endif
 	
 	if (!m_Joystick.Init(m_pLog)) 
 	{
@@ -375,11 +404,17 @@ void CInput::ShutDown()
 
 #ifndef PS2
 #ifndef _XBOX
+#if !defined(LINUX)
 	if (m_g_pdi)
 	{
 		m_g_pdi->Release();
 		m_g_pdi = NULL;
-	}	
+	}
+#else
+	// [webport] m_g_pdi is an opaque placeholder here and is never non-null;
+	// there is no COM object to release. See DInputCompat.h.
+	m_g_pdi = 0;
+#endif	
 #endif //_XBOX
 #endif
 	//
@@ -689,6 +724,15 @@ bool CInput::GetOSKeyName(int nKey, wchar_t *szwKeyName, int iBufSize)
 	return false;
 }
 
+// [webport] VK2XKEY translates Win32 VIRTUAL-KEY codes, which arrive only from
+// a WM_KEYDOWN message pump. A browser has no such pump: DOM events carry
+// KeyboardEvent.code, and WebInput.cpp maps those to XKEY directly. The only
+// caller is XKeyboard.cpp, which is the DirectInput implementation and is not
+// built here, so the whole table is compiled out rather than shimmed with a
+// VK_* namespace that nothing would ever produce.
+#if defined(LINUX)
+int CInput::VK2XKEY(int /*nKey*/) { return 0; }
+#else
 int CInput::VK2XKEY(int nKey)
 {
 //#ifdef DEBUG_KEYBOARD
@@ -822,6 +866,7 @@ int CInput::VK2XKEY(int nKey)
 
    return XKEY_NULL;
 }
+#endif // !LINUX
 
 //////////////////////////////////////////////////////////////////////////
 int CInput::GetKeyID(const char *sName)

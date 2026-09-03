@@ -9,13 +9,26 @@
 //	-:Created by Anton Knyazev
 //
 //////////////////////////////////////////////////////////////////////
+// [webport] Not self-contained: names the primitives:: geometry types but included nothing,
+// relying on the .vcproj compile order. Added its real dependency.
+#include "primitives.h"
+
 
 #ifndef physinterface_h
 #define physinterface_h
 
 #if defined(LINUX)
+	// [webport] The VALIDATORS_START / VALIDATOR macros used by the structs
+	// below are defined in Cry_Math.h (line ~515). physinterface.h never
+	// included it and relied on the .vcproj compile order to have done so.
+	#include "Cry_Math.h"
 	#include "Stream.h"
-	#include "validator.h"
+	// [webport] Dropped #include "Validator.h". It resolved to
+	// CrySystem/Validator.h -- an implementation detail (SDefaultValidator,
+	// holding a CSystem*) that CryCommon, the interface layer, must not depend
+	// on. It was only ever reached because PHYSICS_EXPORTS was defined
+	// platform-wide and suppressed Cry_Math.h's VALIDATOR_* stubs; with that
+	// corrected, the stubs apply here and no validator header is needed.
 #endif
 
 
