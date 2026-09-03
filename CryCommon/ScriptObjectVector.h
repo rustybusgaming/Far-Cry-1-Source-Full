@@ -3,6 +3,11 @@
 //////////////////////////////////////////////////////////////////////
 
 #if !defined(AFX_SCRIPTOBJECTVECTOR_H__C72BCA75_0CD6_47F2_9812_177BF43A2018__INCLUDED_)
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "Cry_Math.h"
+
 #define AFX_SCRIPTOBJECTVECTOR_H__C72BCA75_0CD6_47F2_9812_177BF43A2018__INCLUDED_
 
 #if _MSC_VER > 1000

@@ -34,8 +34,8 @@
 #endif
 
 #ifdef WIN32
-#include "luadebugger/luadbginterface.h"
-#include "luadebugger/LuaDbg.h"
+#include "LuaDebugger/LuaDbgInterface.h"
+#include "LuaDebugger/LUADBG.h"
 #endif
 
 #include "XConsole.h"

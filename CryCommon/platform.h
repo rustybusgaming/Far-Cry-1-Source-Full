@@ -191,7 +191,7 @@ typedef std::wstring wstring;
 #ifdef _XBOX
 #define _CPU_X86
 #include <xtl.h>
-#include "XBoxSpecific.h"
+#include "XboxSpecific.h"
 #endif
 
 

@@ -21,7 +21,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mapi.h>
-#include "mailer.h"
+#include "Mailer.h"
 
 bool CMailer::SendMessage(const char *subject, 
 													const char *messageBody,

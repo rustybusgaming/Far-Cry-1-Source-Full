@@ -31,7 +31,7 @@
 // !!! Do not add any headers here !!!
 #include <IProcess.h>
 #include <CryEngineDecalInfo.h> 
-#include "IStatobj.h"
+#include "IStatObj.h"
 // !!! Do not add any headers here !!!
 
 struct ISystem;

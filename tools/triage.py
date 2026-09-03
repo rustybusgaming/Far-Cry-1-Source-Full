@@ -45,6 +45,9 @@ SILENCED = [
     "null-conversion",
 ]
 
+# Promoted to errors in the real build too -- keep in sync with CryPlatform.cmake.
+PROMOTED = ["-Werror=implicit-function-declaration", "-Werror=return-type"]
+
 # Diagnostic classification. Order matters: first match wins, so the most
 # specific patterns come first. Each entry is (category, regex, remedy).
 RULES = [
@@ -113,11 +116,35 @@ RULES = [
      "usually a downstream effect of an earlier failure"),
 ]
 
-WIN32_ONLY_HINTS = (
-    "SystemWin32", "DebugCallStack", "Mailer", "SourceSafeHelper",
-    "DllMain", "LuaDebugger", "HTTPDownloader", "DownloadManager",
-    "ApplicationHelper", "DataProbe",
-)
+# Translation units that are Win32-by-design and are NOT targets for the port.
+# They are excluded from the score rather than counted as failures, because
+# counting them makes the number permanently unreachable and hides real
+# progress. Each needs a genuine replacement (Milestone 2/3), not a shim.
+EXCLUDED = {
+    "LuaDebugger/":       "Win32 GUI debugger (commctrl, HWND message pumps)",
+    "SystemWin32.cpp":    "raw Win32: registry, message pump, MessageBox",
+    "DebugCallStack.cpp": "dbghelp.dll stack walking",
+    "Mailer.cpp":         "MAPI crash reporter",
+    "SourceSafeHelper.cpp": "Visual SourceSafe COM automation",
+    "HTTPDownloader.cpp": "WinInet; becomes fetch() on the web",
+    "DownloadManager.cpp": "WinInet; becomes fetch() on the web",
+    "getdxver.cpp":       "DirectX version probe via COM",
+
+    # CryCommon headers that are valid only on a platform we are not building.
+    # Compiling them here would be meaningless, not progress.
+    "Win32specific.h":    "Win32 platform header (we build the LINUX seam)",
+    "Win64specific.h":    "Win64 platform header (we build the LINUX seam)",
+    "XboxSpecific.h":     "Xbox platform header",
+    "Linux32Specific.h":  "32-bit Linux variant; the port targets LINUX64",
+    "_TinyWindow.h":      "Win32 common-controls GUI wrapper (commctrl)",
+}
+
+
+def excluded_reason(path):
+    for key, why in EXCLUDED.items():
+        if key in path:
+            return why
+    return None
 
 
 def classify(stderr: str):
@@ -146,9 +173,15 @@ def compile_one(job):
             tu = None
     src = tu if kind == "header" else path
 
-    cmd = ["clang++", "-fsyntax-only", "-std=gnu++98", "-w"]
+    # Mirror cmake/CryPlatform.cmake exactly. Using a blanket -w here would
+    # let a TU be scored as passing that the real build then rejects: the
+    # build promotes a few diagnostics (return-type, implicit function
+    # declaration) to errors precisely because they are undefined behaviour,
+    # not style.
+    cmd = ["clang++", "-fsyntax-only", "-std=gnu++98"]
     cmd += ["-D%s" % d for d in DEFINES]
     cmd += ["-Wno-%s" % w for w in SILENCED]
+    cmd += PROMOTED
     cmd += ["-I%s" % d for d in include_dirs]
     cmd += [src]
 
@@ -198,6 +231,8 @@ def main():
     ap.add_argument("--module", action="append", default=None)
     ap.add_argument("--json")
     ap.add_argument("--show", help="print full diagnostics for one category")
+    ap.add_argument("--excluded", action="store_true",
+                    help="list the TUs excluded by design and why")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     args = ap.parse_args()
 
@@ -211,6 +246,13 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(args.j) as ex:
         results = list(ex.map(compile_one, jobs))
 
+    if args.excluded:
+        for r in results:
+            why = excluded_reason(r["path"])
+            if why:
+                print("  %-44s %s" % (r["path"], why))
+        return 0
+
     if args.show:
         for r in results:
             if r["category"] == args.show:
@@ -220,8 +262,13 @@ def main():
                 print(r["stderr"][:4000])
         return 0
 
+    for r in results:
+        r["excluded"] = excluded_reason(r["path"])
+
     by_kind = defaultdict(lambda: [0, 0])
     for r in results:
+        if r["excluded"]:
+            continue
         k = "CryCommon headers" if r["kind"] == "header" else "CrySystem sources"
         by_kind[k][1] += 1
         if r["ok"]:
@@ -237,10 +284,17 @@ def main():
         bar = "#" * int(pct / 4) + "." * (25 - int(pct / 4))
         print("  %-20s %4d/%-4d  [%s] %5.1f%%" % (k, ok, tot, bar, pct))
 
-    tot_ok = sum(1 for r in results if r["ok"])
-    print("  %-20s %4d/%-4d" % ("TOTAL", tot_ok, len(results)))
+    tot_ok = sum(1 for r in results if r["ok"] and not r["excluded"])
+    tot = sum(1 for r in results if not r["excluded"])
+    print("  %-20s %4d/%-4d" % ("TOTAL", tot_ok, tot))
 
-    cats = Counter(r["category"] for r in results if not r["ok"])
+    nex = sum(1 for r in results if r["excluded"])
+    if nex:
+        print("\n  (%d further TUs excluded by design -- Win32-only, see --excluded)"
+              % nex)
+
+    cats = Counter(r["category"] for r in results
+                   if not r["ok"] and not r["excluded"])
     if cats:
         print("\n" + "=" * 78)
         print("  BLOCKERS BY CATEGORY")
@@ -253,10 +307,10 @@ def main():
         print("\n" + "=" * 78)
         print("  WORST OFFENDERS (by error count)")
         print("=" * 78)
-        for r in sorted((r for r in results if not r["ok"]),
+        for r in sorted((r for r in results
+                         if not r["ok"] and not r["excluded"]),
                         key=lambda r: -r["errors"])[:12]:
-            hint = "  [win32-only]" if any(h in r["path"] for h in WIN32_ONLY_HINTS) else ""
-            print("  %5d  %-46s %s%s" % (r["errors"], r["path"], r["category"], hint))
+            print("  %5d  %-46s %s" % (r["errors"], r["path"], r["category"]))
 
     passing = sorted(r["path"] for r in results if r["ok"])
     print("\n%d translation units already compile clean." % len(passing))

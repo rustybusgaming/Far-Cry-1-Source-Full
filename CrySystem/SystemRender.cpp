@@ -33,8 +33,8 @@
 #include "CrySizerImpl.h"
 
 #ifdef WIN32
-#include "luadebugger/luadbginterface.h"
-#include "luadebugger/LuaDbg.h"
+#include "LuaDebugger/LuaDbgInterface.h"
+#include "LuaDebugger/LUADBG.h"
 #endif
 
 #if !defined(LINUX)

@@ -36,6 +36,11 @@
 //   #include <stdio.h>
 //
 //////////////////////////////////////////////////////////////////////
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "CryHeaders.h"
+
 #ifndef __CRY_COMMON_CRY_COMPILED_FILE_FORMAT_HDR__
 #define __CRY_COMMON_CRY_COMPILED_FILE_FORMAT_HDR__
 

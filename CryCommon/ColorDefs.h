@@ -12,6 +12,11 @@
 // the .vcproj's fixed compile order. Any build that compiles it first -- or
 // simply in a different order -- fails. Including its actual dependency makes
 // the header stand on its own.
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "IRenderer.h"
+
 #include "Cry_Math.h"
 
 #ifndef __COLORDEFS_H__

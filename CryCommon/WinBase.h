@@ -61,6 +61,7 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <ctype.h>
 
 //////////////////////////////////////////////////////////////////////////
 // Scalar types not already covered by Linux{,64}Specific.h
@@ -264,6 +265,63 @@ inline void GetSystemTime(LPSYSTEMTIME st) { GetLocalTime(st); }
 inline void OutputDebugString(const char* s) { fputs(s, stderr); }
 inline DWORD GetLastError() { return (DWORD)errno; }
 inline void  SetLastError(DWORD e) { errno = (int)e; }
+
+//////////////////////////////////////////////////////////////////////////
+// Thread and event handles
+//
+// platform.h declares these for every platform EXCEPT Linux:
+//
+//     #if !defined(LINUX)
+//     typedef void *THREAD_HANDLE;
+//     typedef void *EVENT_HANDLE;
+//     #endif
+//
+// The Linux definitions lived in the unreleased support layer, so the types
+// are simply absent -- CrySystem/RefStreamEngine.h and HTTPDownloader.h both
+// declare members of them.
+//
+// A Win32 event is a counted, waitable, manual/auto-reset object; the honest
+// POSIX equivalent is a condvar plus a mutex and a flag, not a bare pthread_t.
+// Modelling it as a struct (rather than aliasing HANDLE) keeps the semantics
+// available for the Milestone 2 threading rewrite.
+//////////////////////////////////////////////////////////////////////////
+typedef pthread_t THREAD_HANDLE;
+
+typedef struct _CRY_EVENT {
+	pthread_mutex_t mutex;
+	pthread_cond_t  cond;
+	int             signalled;
+	int             manual_reset;
+} *EVENT_HANDLE;
+
+//////////////////////////////////////////////////////////////////////////
+// Path comparison
+//
+// CryPak.h and CryPak.cpp call comparePathNames() in five places; it is
+// defined nowhere in the tree -- another casualty of the missing Linux layer.
+//
+// Its contract is legible from the call sites: it is used as
+// "!comparePathNames(a, b, len)" to mean "these paths match", so it returns 0
+// on equality, like strncmp. Path matching on Windows is case-insensitive AND
+// separator-insensitive ('/' and '\\' are the same character for this
+// purpose), and the pak data relies on both, so it must be reproduced here
+// rather than substituting a plain strncasecmp.
+//////////////////////////////////////////////////////////////////////////
+inline int comparePathNames(const char* a, const char* b, size_t len)
+{
+	for (size_t i = 0; i < len; ++i)
+	{
+		unsigned char ca = (unsigned char)a[i];
+		unsigned char cb = (unsigned char)b[i];
+		if (ca == '\\') ca = '/';
+		if (cb == '\\') cb = '/';
+		ca = (unsigned char)tolower(ca);
+		cb = (unsigned char)tolower(cb);
+		if (ca != cb) return ca < cb ? -1 : 1;
+		if (ca == 0)  return 0;      // both ended together
+	}
+	return 0;
+}
 
 //////////////////////////////////////////////////////////////////////////
 // Case-insensitive file open

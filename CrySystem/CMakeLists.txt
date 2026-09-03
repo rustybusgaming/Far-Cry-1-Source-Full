@@ -21,12 +21,20 @@ cry_add_module(CrySystem
     SOURCES
     ApplicationHelper.cpp
     CrySizerImpl.cpp
+    CrySizerStats.cpp
+    DataProbe.cpp
     DebugCallStack.cpp
+    FrameProfileRender.cpp
+    FrameProfileSystem.cpp
     MTSafeAllocator.cpp
     Mailer.cpp
+    RandGen.cpp
+    ScriptObjectMovie.cpp
     ScriptObjectScript.cpp
     SourceSafeHelper.cpp
     StdAfx.cpp
+    StreamEngine.cpp
+    XML/_XMLDOMParserImpl.cpp
     ZipDirCache.cpp
     ZipDirFind.cpp
     ZipDirFindRW.cpp

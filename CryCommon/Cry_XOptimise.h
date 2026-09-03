@@ -12,6 +12,18 @@
 //
 //////////////////////////////////////////////////////////////////////
 
+// [webport] Canonical entry point -- see the same pattern in Cry_Vector3.h.
+//
+// This header needs ILINE, Matrix44 and gf_DEGTORAD, all of which come from
+// Cry_Math.h -- which in turn includes THIS header (at its line ~285, after it
+// has defined all three). So the dependency is a cycle that is only well-formed
+// when entered through Cry_Math.h.
+//
+// The include sits ABOVE the guard deliberately: below it, Cry_Math.h's
+// re-entry here would find CRY_SIMD_H already defined, skip the body, and the
+// declarations would be missing at the point of use.
+#include "Cry_Math.h"
+
 #ifndef CRY_SIMD_H
 #define CRY_SIMD_H
 
@@ -19,7 +31,7 @@
 # pragma once
 #endif
 
-#include "TArray.h"
+#include "Tarray.h"
 #include "platform.h"
 //========================================================================================
 

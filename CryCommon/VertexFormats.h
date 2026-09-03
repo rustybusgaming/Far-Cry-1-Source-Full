@@ -9,6 +9,24 @@
 //	-Feb 23,2001:Created by Marco Corbetta
 //
 //////////////////////////////////////////////////////////////////////
+// [webport] Not self-contained: this header names Vec3 and UCol without
+// including anything, relying on the .vcproj compile order. Vec3 comes from
+// Cry_Math.h and UCol from IShader.h (which is where the union is defined --
+// LeafBuffer.h only forward-declares it).
+#include "Cry_Math.h"
+#include "IShader.h"
+
+// [webport] The g_VertFormat*Offsets tables below compute member offsets with
+// the hand-rolled idiom (int)&(((T*)0)->member) -- taking the address of a
+// member on a null pointer. Casting that pointer straight to int is a
+// truncating conversion and clang rejects it on a 64-bit target.
+//
+// The values themselves are genuine member offsets of at most a few dozen
+// bytes, so nothing is lost; only the intermediate needs to be pointer-width.
+// Casting via INT_PTR first is the same idiom CryHeaders.h:374 already uses.
+// (offsetof() would be the modern spelling, but these structs are used with
+// array-subscript members, where offsetof is not portable to C++98.)
+
 
 #ifndef VERTEXFORMATS_H
 #define VERTEXFORMATS_H
@@ -291,17 +309,17 @@ const int g_VertFormatUVOffsets[] =
 	-1, // no UVs in this format - invalid format
 	-1, // VERTEX_FORMAT_P3F=1,                // shadow volumes (12 bytes)
 	-1, // VERTEX_FORMAT_P3F_COL4UB=2,         // usually terrain (16 bytes)
-	(int)&(((struct_VERTEX_FORMAT_P3F_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_TEX2F=3,          // everything else (20 bytes)
-	(int)&(((struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_COL4UB_TEX2F=4,   // usually plants (24 bytes)
-	(int)&(((struct_VERTEX_FORMAT_TRP3F_COL4UB_TEX2F*)0)->st[0]),// VERTEX_FORMAT_TRP3F_COL4UB_TEX2F=5, // fonts (28 bytes)
+	(int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_TEX2F=3,          // everything else (20 bytes)
+	(int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_COL4UB_TEX2F=4,   // usually plants (24 bytes)
+	(int)(INT_PTR)&(((struct_VERTEX_FORMAT_TRP3F_COL4UB_TEX2F*)0)->st[0]),// VERTEX_FORMAT_TRP3F_COL4UB_TEX2F=5, // fonts (28 bytes)
 	-1, // VERTEX_FORMAT_P3F_COL4UB_COL4UB=1,     
 	-1, // VERTEX_FORMAT_P3F_N=1,                
   -1, // VERTEX_FORMAT_P3F_N_COL4UB=1,                
-	(int)&(((struct_VERTEX_FORMAT_P3F_N_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_N_TEX2F=3,          // everything else (20 bytes)
-	(int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_TEX2F*)0)->st[0]) // VERTEX_FORMAT_P3F_N_COL4UB_TEX2F=4,   // usually plants (24 bytes)
+	(int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_N_TEX2F=3,          // everything else (20 bytes)
+	(int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_TEX2F*)0)->st[0]) // VERTEX_FORMAT_P3F_N_COL4UB_TEX2F=4,   // usually plants (24 bytes)
   -1, // VERTEX_FORMAT_P3F_N_COL4UB_COL4UB=1,                
-  (int)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_COL4UB_COL4UB_TEX2F=4,   // usually plants (24 bytes)
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F=4,   // usually plants (24 bytes)
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_COL4UB_COL4UB_TEX2F=4,   // usually plants (24 bytes)
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F*)0)->st[0]), // VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F=4,   // usually plants (24 bytes)
 };
 
 
@@ -312,18 +330,18 @@ const int g_VertFormatRGBAOffsets[] =
 {
 	-1, // invalid format
 	-1,
-	(int)&(((struct_VERTEX_FORMAT_P3F_COL4UB*)0)->color.dcolor),
+	(int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB*)0)->color.dcolor),
 	-1,
-	(int)&(((struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F*)0)->color.dcolor),
-	(int)&(((struct_VERTEX_FORMAT_TRP3F_COL4UB_TEX2F*)0)->color.dcolor),
-  (int)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB*)0)->color.dcolor),
+	(int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F*)0)->color.dcolor),
+	(int)(INT_PTR)&(((struct_VERTEX_FORMAT_TRP3F_COL4UB_TEX2F*)0)->color.dcolor),
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB*)0)->color.dcolor),
   -1,
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB*)0)->color.dcolor),
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB*)0)->color.dcolor),
   -1,
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_TEX2F*)0)->color.dcolor),
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB*)0)->color.dcolor),
-  (int)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB_TEX2F*)0)->color.dcolor),
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F*)0)->color.dcolor),
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_TEX2F*)0)->color.dcolor),
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB*)0)->color.dcolor),
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB_TEX2F*)0)->color.dcolor),
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F*)0)->color.dcolor),
 };
 
 // this is the table of offsets of normals relative to the start of the structure
@@ -338,13 +356,13 @@ const int g_VertFormatNormalOffsets[] =
 	-1, // VERTEX_FORMAT_P3F_COL4UB_TEX2F=4,
 	-1, // VERTEX_FORMAT_TRP3F_COL4UB_TEX2F=5,
   -1, // VERTEX_FORMAT_P3F_COL4UB_COL4UB,
-  (int)&(((struct_VERTEX_FORMAT_P3F_N*)0)->normal), // VERTEX_FORMAT_P3F_N=1,                
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB*)0)->normal), // VERTEX_FORMAT_P3F_N_COL4UB=1,                
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_TEX2F*)0)->normal), // VERTEX_FORMAT_P3F_N_TEX2F=3,          // everything else (20 bytes)
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_TEX2F*)0)->normal), // VERTEX_FORMAT_P3F_N_COL4UB_TEX2F=4,   // usually plants (24 bytes)
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB*)0)->normal),
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N*)0)->normal), // VERTEX_FORMAT_P3F_N=1,                
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB*)0)->normal), // VERTEX_FORMAT_P3F_N_COL4UB=1,                
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_TEX2F*)0)->normal), // VERTEX_FORMAT_P3F_N_TEX2F=3,          // everything else (20 bytes)
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_TEX2F*)0)->normal), // VERTEX_FORMAT_P3F_N_COL4UB_TEX2F=4,   // usually plants (24 bytes)
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB*)0)->normal),
   -1, 
-  (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F*)0)->normal),
+  (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F*)0)->normal),
 };
 
 static struct SBufInfoTable gBufInfoTable[] = 
@@ -353,42 +371,42 @@ static struct SBufInfoTable gBufInfoTable[] =
     0
   },
   {  //VERTEX_FORMAT_P3F
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F *)0)->x)  
     0
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_COL4UB
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_COL4UB *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB *)0)->x)  
     0,
     OOFS(color.dcolor),
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_TEX2F
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_TEX2F *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_TEX2F *)0)->x)  
     OOFS(st[0])
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_COL4UB_TEX2F
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F *)0)->x)  
     OOFS(st[0]),
     OOFS(color.dcolor)
 #undef OOFS
   },
   {  //VERTEX_FORMAT_TRP3F_COL4UB_TEX2F
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_TRP3F_COL4UB_TEX2F *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_TRP3F_COL4UB_TEX2F *)0)->x)  
     OOFS(st[0]),
     OOFS(color.dcolor),
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_COL4UB_COL4UB
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB *)0)->x)  
     0,
     OOFS(color.dcolor),
     OOFS(seccolor.dcolor),
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_N
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_N *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N *)0)->x)  
     0,
     0,
     0,
@@ -396,7 +414,7 @@ static struct SBufInfoTable gBufInfoTable[] =
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_N_COL4UB
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB *)0)->x)  
     0,
     OOFS(color.dcolor),
     0,
@@ -404,7 +422,7 @@ static struct SBufInfoTable gBufInfoTable[] =
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_N_TEX2F
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_N_TEX2F *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_TEX2F *)0)->x)  
     OOFS(st[0]),
     0,
     0,
@@ -412,7 +430,7 @@ static struct SBufInfoTable gBufInfoTable[] =
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_N_COL4UB_TEX2F
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_TEX2F *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_TEX2F *)0)->x)  
     OOFS(st[0]),
     OOFS(color.dcolor),
     0,
@@ -420,7 +438,7 @@ static struct SBufInfoTable gBufInfoTable[] =
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_N_COL4UB_COL4UB
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB *)0)->x)  
     0,
     OOFS(color.dcolor),
     OOFS(seccolor.dcolor),
@@ -428,7 +446,7 @@ static struct SBufInfoTable gBufInfoTable[] =
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_COL4UB_COL4UB_TEX2F
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB_TEX2F *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_COL4UB_COL4UB_TEX2F *)0)->x)  
     OOFS(st[0]),
     OOFS(color.dcolor),
     OOFS(seccolor.dcolor),
@@ -436,7 +454,7 @@ static struct SBufInfoTable gBufInfoTable[] =
 #undef OOFS
   },
   {  //VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F
-#define OOFS(x) (int)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F *)0)->x)  
+#define OOFS(x) (int)(INT_PTR)&(((struct_VERTEX_FORMAT_P3F_N_COL4UB_COL4UB_TEX2F *)0)->x)  
     OOFS(st[0]),
     OOFS(color.dcolor),
     OOFS(seccolor.dcolor),

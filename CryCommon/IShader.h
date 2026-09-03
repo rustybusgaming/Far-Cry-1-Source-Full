@@ -6,6 +6,11 @@
     * Created by Honich Andrey
 
 =============================================================================*/
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "ColorDefs.h"
+
 
 #ifndef _ISHADER_H_
 #define _ISHADER_H_
@@ -706,7 +711,10 @@ public:
 
 struct SSideMaterial
 {
-  SSideMaterial::SSideMaterial() 
+  // [webport] Dropped the "SSideMaterial::" qualifier -- a constructor
+  // declared inside its own class must not be qualified. Same ill-formed
+  // pattern MSVC 7.1 accepted in Stream.h.
+  SSideMaterial() 
     : m_Ambient(1.0f, 1.0f, 1.0f, 1.0f),
     m_Diffuse(1.0f, 1.0f, 1.0f, 1.0f),
     m_Specular(1.0f, 1.0f, 1.0, 1.0f),

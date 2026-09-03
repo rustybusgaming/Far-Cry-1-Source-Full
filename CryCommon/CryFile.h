@@ -167,7 +167,11 @@ inline void CCryFile::SeekToBegin()
 //////////////////////////////////////////////////////////////////////////
 inline size_t CCryFile::SeekToEnd()
 {
-	Seek( 0,SEEK_END );
+	// [webport] BUG FIX: this is declared size_t but had no return statement,
+	// so every caller read an indeterminate value -- undefined behaviour that
+	// MSVC 7.1 reported only as a warning. Seek() already returns the
+	// resulting offset, which is what SeekToEnd is documented to give back.
+	return Seek( 0,SEEK_END );
 }
 
 //////////////////////////////////////////////////////////////////////////

@@ -5,7 +5,7 @@
 
 #include <smartptr.h>
 #ifdef LINUX
-	#include <winbase.h>
+	#include <WinBase.h>
 	#include <stdint.h>
 #endif
 

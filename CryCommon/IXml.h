@@ -12,6 +12,11 @@
 //  History:
 //
 ////////////////////////////////////////////////////////////////////////////
+// [webport] This header was not self-contained: it names types it never
+// included, relying on the .vcproj's fixed compile order to have pulled
+// them in first. Including its real dependencies lets it stand alone.
+#include "Cry_Math.h"
+
 
 #ifndef __ixml_h__
 #define __ixml_h__
@@ -25,7 +30,7 @@
 #include <set>
 
 #ifdef  _AFX
-#include "Util\GuidUtil.h"
+#include "Util/GuidUtil.h"
 #endif //_AFX
 
 /**

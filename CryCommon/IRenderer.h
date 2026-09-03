@@ -98,7 +98,7 @@ template	<class T> class list2;
 
 //DOC-IGNORE-BEGIN
 #include "ColorDefs.h"
-#include "TArray.h"
+#include "Tarray.h"
 
 #include <IFont.h>
 //DOC-IGNORE-END

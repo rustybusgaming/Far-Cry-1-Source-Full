@@ -201,7 +201,10 @@ public:
 		return *this;
 	}
 
-	void CStream::Debug( const char *inTxt=0 );
+	// [webport] Removed the "CStream::" qualifier: a member declared inside
+	// its own class must not be qualified with the class name. MSVC 7.1
+	// accepted the redundant qualification; it is ill-formed in standard C++.
+	void Debug( const char *inTxt=0 );
 
 	//! set a bit at the specified position in the bitstream
 	bool SetBit(size_t nPos, DWORD_PTR nValue);
