@@ -1,27 +1,46 @@
 ################################################################################
 # RenderDll -- the renderer.
 #
-# Two targets so far, chosen deliberately in this order:
+# ONE TARGET, NOT TWO.
 #
-#   CryRenderCommon  the backend-INDEPENDENT renderer: shaders, textures,
-#                    render elements, the image loaders. 81 sources. Every
-#                    backend needs it, so it is the prerequisite for any of
-#                    them.
+# An earlier version of this file split the renderer into CryRenderCommon (the
+# backend-independent code) and CryRenderNULL (the null backend), on the
+# reasonable-looking assumption that Common is shared. It is not, and the
+# assumption cost a link:
 #
-#   CryRenderNULL    Crytek's null renderer, 11 sources and ~2.4k lines,
-#                    shipped for the dedicated server. It implements the full
-#                    IRenderer interface and draws nothing.
+#   * Common/Shaders/Shader.h declares CPShader::m_PShaders and
+#     CPShader::mfForName() only "#if !defined(NULL_RENDERER)". The definitions
+#     live in the BACKEND -- XRenderD3D9/D3DCGPShader.cpp, XRenderOGL/
+#     GLCGPShader.cpp -- and XRenderNULL has no equivalent, because with
+#     NULL_RENDERER set it does not need one.
 #
-# XRenderNULL is the important one. It is what makes a HEADLESS build possible
-# -- the engine can link and run with no GL, no D3D, no Cg and no shader
-# rewrite -- which is Milestone 3, and it proves out everything except the
-# rasteriser. Doing it before touching XRenderOGL means the WebGL2 work starts
-# from a running engine instead of a compiling one.
+#   * The same define removes the nvDXTcompress/nvDXTdecompress calls in
+#     TexMan.cpp and Renderer.cpp, the ATI 3Dc compressor calls in TexMan.cpp,
+#     and the CImageJpgFile construction in CImage.cpp -- all of which
+#     otherwise demand binary blobs (nvDXTlib.lib, CompressATI.lib, ijl15.lib)
+#     that are Windows-only and cannot be part of a web build.
+#
+# So Common is not a library; it is a body of source each backend compiles into
+# itself with its own defines. Crytek's own XRenderNULL.vcproj lists all 67
+# files -- Common and XRenderNULL together -- in one project with
+# NULL_RENDERER in PreprocessorDefinitions. This file now mirrors that exactly,
+# and the source list below is generated from that .vcproj rather than guessed.
+#
+# When XRenderOGL is brought up it gets its OWN target compiling the same
+# Common sources again, without NULL_RENDERER and with the GL backend's
+# defines. That duplication is the design, not an accident of it.
+#
+# WHY THE NULL BACKEND FIRST
+#
+# It is what makes a headless build possible -- the engine links and runs with
+# no GL, no D3D, no Cg and no shader rewrite -- so it proves out everything
+# except the rasteriser. Doing it before touching XRenderOGL means the WebGL2
+# work starts from a running engine instead of a compiling one.
 #
 # Not built yet:
-#   XRenderOGL   71k lines of OpenGL 1.x -- immediate mode, NV register
-#                combiners, WGL context creation and Cg shaders whose cgGL.lib
-#                is a binary blob. This is the Milestone 4 rewrite to WebGL2.
+#   XRenderOGL         71k lines of OpenGL 1.x -- immediate mode, NV register
+#                      combiners, WGL context creation and Cg shaders whose
+#                      cgGL.lib is a binary blob. The WebGL2 rewrite.
 #   XRenderD3D8/D3D9   Direct3D; no path to the web at all.
 #   XRenderPS2         console backend.
 ################################################################################
@@ -35,10 +54,16 @@ set(CRY_RENDER_INCLUDES
     "${CMAKE_CURRENT_SOURCE_DIR}/Common/RendElements"
     "${CMAKE_CURRENT_SOURCE_DIR}/Common/NvTriStrip"
     "${CMAKE_CURRENT_SOURCE_DIR}/Common/3Dc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/XRenderNULL"
 )
 
-cry_add_module(CryRenderCommon
+# ------------------------------------------------------------------------------
+# The source list, in the order XRenderNULL.vcproj gives it: the shared Common
+# sources first, then the null backend's own.
+# ------------------------------------------------------------------------------
+cry_add_module(CryRenderNULL
     SOURCES
+    RenderPCH.cpp
     Common/3DUtils.cpp
     Common/CRT.cpp
     Common/EvalFuncs_C.cpp
@@ -56,10 +81,8 @@ cry_add_module(CryRenderCommon
     Common/RendElements/CREClientPoly2D.cpp
     Common/RendElements/CREDummy.cpp
     Common/RendElements/CREFlares.cpp
-    Common/RendElements/CREFlashBang.cpp
     Common/RendElements/CREGlare.cpp
     Common/RendElements/CREHDRProcess.cpp
-    Common/RendElements/CREMotionBlur.cpp
     Common/RendElements/CREOcLeaf.cpp
     Common/RendElements/CREOcean.cpp
     Common/RendElements/CREOclusionQuery.cpp
@@ -84,48 +107,18 @@ cry_add_module(CryRenderCommon
     Common/Shaders/ShaderParse.cpp
     Common/Shaders/ShaderScript.cpp
     Common/Shaders/ShaderTemplate.cpp
-    Common/SimpleFrameProfiler.cpp
     Common/Textures/Image/BmpImage.cpp
     Common/Textures/Image/CImage.cpp
     Common/Textures/Image/DDSImage.cpp
     Common/Textures/Image/JpgImage.cpp
-    Common/Textures/Image/JpgImage_XBox.cpp
     Common/Textures/Image/PcxImage.cpp
     Common/Textures/Image/Quantize.cpp
     Common/Textures/Image/TgaImage.cpp
-    Common/Textures/Image/XtfImage.cpp
     Common/Textures/Image/inv_cmap.cpp
-    Common/Textures/Image/jpeg6/jcomapi.cpp
-    Common/Textures/Image/jpeg6/jdapimin.cpp
-    Common/Textures/Image/jpeg6/jdapistd.cpp
-    Common/Textures/Image/jpeg6/jdatasrc.cpp
-    Common/Textures/Image/jpeg6/jdcoefct.cpp
-    Common/Textures/Image/jpeg6/jdcolor.cpp
-    Common/Textures/Image/jpeg6/jddctmgr.cpp
-    Common/Textures/Image/jpeg6/jdhuff.cpp
-    Common/Textures/Image/jpeg6/jdinput.cpp
-    Common/Textures/Image/jpeg6/jdmainct.cpp
-    Common/Textures/Image/jpeg6/jdmarker.cpp
-    Common/Textures/Image/jpeg6/jdmaster.cpp
-    Common/Textures/Image/jpeg6/jdpostct.cpp
-    Common/Textures/Image/jpeg6/jdsample.cpp
-    Common/Textures/Image/jpeg6/jdtrans.cpp
-    Common/Textures/Image/jpeg6/jerror.cpp
-    Common/Textures/Image/jpeg6/jfdctflt.cpp
-    Common/Textures/Image/jpeg6/jidctflt.cpp
-    Common/Textures/Image/jpeg6/jmemmgr.cpp
-    Common/Textures/Image/jpeg6/jmemnobs.cpp
-    Common/Textures/Image/jpeg6/jutils.cpp
     Common/Textures/TexMan.cpp
     Common/Textures/TexManShadows.cpp
     Common/Textures/TexManStreaming.cpp
     Common/pip_addons.cpp
-    INCLUDES ${CRY_RENDER_INCLUDES}
-    DEPENDS  CryCommon
-)
-
-cry_add_module(CryRenderNULL
-    SOURCES
     XRenderNULL/NULL_Font.cpp
     XRenderNULL/NULL_REOcean.cpp
     XRenderNULL/NULL_RERender.cpp
@@ -140,3 +133,23 @@ cry_add_module(CryRenderNULL
     INCLUDES ${CRY_RENDER_INCLUDES}
     DEPENDS  CryCommon
 )
+
+# The define that makes all of the above a NULL renderer rather than a backend
+# with no backend. See the header comment.
+target_compile_definitions(CryRenderNULL PRIVATE NULL_RENDERER)
+
+# ------------------------------------------------------------------------------
+# Sources in Common/ that XRenderNULL.vcproj does NOT list, and why:
+#
+#   Textures/Image/XtfImage.cpp       ATI .xtf loader; needs CompressATI.lib.
+#   Textures/Image/JpgImage_XBox.cpp  Xbox-only variant of JpgImage.cpp.
+#   Textures/Image/jpeg6/*.cpp        libjpeg 6, reached only from the PS2
+#                                     branch of JpgImage.cpp.
+#   RendElements/CREFlashBang.cpp     }  present in the tree but in no
+#   RendElements/CREMotionBlur.cpp    }  shipped project file; post-process
+#   SimpleFrameProfiler.cpp           }  effects and a profiler that appear to
+#                                        have been cut before release.
+#
+# They still COMPILE -- tools/triage.py covers them -- they are simply not part
+# of this backend's link.
+# ------------------------------------------------------------------------------

@@ -69,6 +69,13 @@ cry_add_module(CrySystem
     ZipDirStructures.cpp
     ZipDirTree.cpp
     getdxver.cpp
+    # [webport] Replacements for the excluded Win32 translation units. Each
+    # says in its own header why the original could not be ported and what a
+    # real implementation would have to do.
+    SyncStreamEngine.cpp      # CRefStreamEngine's overlapped I/O, done synchronously
+    HeadlessStubs.cpp         # the CSystem methods from SystemWin32/DebugCallStack/etc
+    HTTPDownloaderStub.cpp    # CHTTPDownloader without WinInet
+
     INCLUDES
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/XML"

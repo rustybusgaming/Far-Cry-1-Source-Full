@@ -56,7 +56,12 @@ void *luaM_growaux (lua_State *L, void *block, int *size, int size_elems,
 
 
 extern int g_dumpStackOnAlloc;
-extern void DumpCallStack( lua_State *L );
+/* WEB PORT: CScriptSystem defines this as extern "C" (ScriptSystem.cpp), so
+** the declaration has to say so too now that this file is compiled as C++.
+** It is a genuine callback out of the VM: Lua's allocator calls it to print
+** the script call stack when a memory request fails.
+*/
+extern "C" void DumpCallStack( lua_State *L );
 
 /*
 ** generic allocation routine.

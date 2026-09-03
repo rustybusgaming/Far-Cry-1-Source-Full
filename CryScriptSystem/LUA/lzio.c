@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <../LuaCrypakIO.h>
+#include <../LuaCryPakIO.h>   /* WEB PORT: was LuaCrypakIO.h; case matters off Windows */
 #define LUA_PRIVATE
 #include "lua.h"
 

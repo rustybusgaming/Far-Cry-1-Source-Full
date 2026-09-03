@@ -1,5 +1,11 @@
+/* WEB PORT: compiled as C++ (see cmake/CryVendor.cmake), so the Lua headers are
+** wrapped the same way CryScriptSystem wraps them. That gives vl_isvector --
+** which lua.h declares -- the C linkage its definition below needs.
+*/
+extern "C" {
 #include "lua.h"
 #include "lauxlib.h"
+}
 
 int g_vectortag=0;
 
@@ -213,7 +219,10 @@ int vl_isvector(lua_State *L,int index)
 	return lua_tag(L,index)==g_vectortag;
 }
 
-int vl_initvectorlib(lua_State *L)
+/* WEB PORT: declared extern "C" by CScriptSystem::Init, and not mentioned in
+** lua.h, so it needs marking here.
+*/
+extern "C" int vl_initvectorlib(lua_State *L)
 {
 	g_vectortag=lua_newtype(L,"vector",LUA_TUSERDATA);
 

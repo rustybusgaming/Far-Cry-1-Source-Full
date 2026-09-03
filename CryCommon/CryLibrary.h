@@ -53,6 +53,29 @@
 	// for compatibility with code written for windows
 	#define CrySharedLibraySupported true
 	#define CrySharedLibrayExtension ".so"
+
+#if defined(_CRY_STATIC_MODULES)
+	// One link unit: there are no shared libraries to open, so module lookup
+	// is served from a compiled-in table instead. Every call site in CrySystem
+	// is unchanged -- it still calls LoadDLL() and then CryGetProcAddress(),
+	// and still handles both of them returning NULL.
+	//
+	// This is not merely a convenience for wasm, which has no synchronous
+	// dlopen() at all: it is also what makes the build reproducible, since the
+	// dlopen() path below depends on a MODULE_PATH environment variable that
+	// nothing in the tree ever sets.
+	#include "StaticModules.h"
+
+	#define CryGetProcAddress(libHandle, procName) ::CryStaticGetProcAddress((void*)(libHandle), procName)
+	#define CryFreeLibrary(libHandle) ::CryStaticFreeModule((void*)(libHandle))
+
+	#define HMODULE void*
+
+	static HMODULE CryLoadLibrary(const char* libName, const bool /*cAppend*/ = true, const bool /*cLoadLazy*/ = false)
+	{
+		return ::CryStaticLoadModule(libName);
+	}
+#else
 	#define CryGetProcAddress(libHandle, procName) ::dlsym(libHandle, procName)
 	#define CryFreeLibrary(libHandle) ::dlclose(libHandle)
 
@@ -84,6 +107,7 @@
 #endif
 		return ::dlopen(newLibName.c_str(), cLoadLazy?(RTLD_LAZY | RTLD_GLOBAL):(RTLD_NOW | RTLD_GLOBAL));
 	}
+#endif //_CRY_STATIC_MODULES
 
 
 #else

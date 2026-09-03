@@ -10,6 +10,7 @@
 
 #include <limits.h>
 #include <stddef.h>
+#include <stdint.h>   /* WEB PORT: uintptr_t, for IntPoint() below */
 
 
 #include "lua.h"
@@ -67,7 +68,22 @@ typedef unsigned char lu_byte;
 ** cannot hold the whole pointer value
 ** (the shift removes bits that are usually 0 because of alignment)
 */
-#define IntPoint(p)  ((((lu_hash)(p)) >> 4) ^ (lu_hash)(p))
+/* WEB PORT: cast through uintptr_t before narrowing to lu_hash.
+**
+** The original narrowed the pointer to lu_hash (32 bits) FIRST and did the
+** shift and xor on the result. On a 64-bit target that is a compile error in
+** C++ ("cast from pointer to smaller type loses information"), and it also
+** discarded the top 32 bits of every pointer before they could contribute to
+** the hash -- so any two objects sharing a low half collided.
+**
+** Doing the mix at pointer width and truncating afterwards fixes both. On a
+** 32-bit target uintptr_t IS lu_hash's width, so this expands to exactly the
+** original bits; nothing changes there.
+**
+** The comment above still applies: the result is a hash, and losing the high
+** bits at the end is fine. Losing them at the start was not.
+*/
+#define IntPoint(p)  ((lu_hash)((((uintptr_t)(p)) >> 4) ^ ((uintptr_t)(p))))
 
 
 

@@ -32,6 +32,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(CryPlatform)
 include(CryModule)
+include(CryVendor)
 
 # ------------------------------------------------------------------------------
 # Options
@@ -45,6 +46,17 @@ option(CRY_HEADER_PARSE_GATE
 # Ordered by dependency depth. Only the modules that have been brought up so far
 # are listed; the rest of the engine is added as it is ported.
 # ------------------------------------------------------------------------------
+# Third-party C sources vendored into the tree (zlib, expat, md5). They are
+# built here rather than inside CrySystem because they are C, not C++, and need
+# a different warning and standard policy.
+cry_add_vendor_libs()
+
+# FreeType 2, vendored under CryFont/FreeType2/ and likewise never built.
+cry_add_freetype()
+
+# Lua 4.1-alpha, vendored under CryScriptSystem/LUA/ and likewise never built.
+cry_add_lua()
+
 add_subdirectory(CryCommon)
 add_subdirectory(CrySystem)
 add_subdirectory(Cry3DEngine)
@@ -59,6 +71,15 @@ add_subdirectory(CryAnimation)
 add_subdirectory(CryFont)
 add_subdirectory(CrySoundSystem)
 add_subdirectory(RenderDll)
+
+# Resolves the module factories that CSystem would otherwise dlopen(). Must
+# come after every module it names.
+add_subdirectory(StaticModules)
+
+# The first executable in the port: links every module above and starts the
+# engine on the null renderer. See Headless/CMakeLists.txt for why the module
+# set needs a linker group.
+add_subdirectory(Headless)
 
 # Tests for the port's own code (WinBase.h and friends).
 enable_testing()

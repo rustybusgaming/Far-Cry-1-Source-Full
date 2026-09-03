@@ -65,6 +65,13 @@ set(CRY_COMMON_DEFINES
 
     _CRY_WEBPORT               # our own guard for web-port-specific divergence
 
+    # Resolve the per-module factories from a compiled-in table instead of
+    # dlopen()/dlsym(). Required for wasm, which has no synchronous dlopen,
+    # and correct for the native headless build too -- the engine's dlopen
+    # path reads a MODULE_PATH environment variable nothing ever sets.
+    # See CryCommon/StaticModules.h.
+    _CRY_STATIC_MODULES
+
     # CryPak.cpp's LINUX branch uses struct stat64 / _fstat64 explicitly.
     # glibc only declares the *64 forms under _LARGEFILE64_SOURCE, and
     # _FILE_OFFSET_BITS=64 makes the plain forms 64-bit as well so the two

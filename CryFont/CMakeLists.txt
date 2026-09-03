@@ -1,11 +1,9 @@
 ################################################################################
 # CryFont -- font rendering, with FreeType2 vendored under FreeType2/.
 #
-# Only CryFont's own sources are built here; FreeType itself is a separate
-# vendored library and is not yet compiled.
-#
-# Compiles, does not link: like the other engine modules it calls into code that
-# is not ported yet. Compiling is the milestone.
+# FreeType itself is built separately as CryFreeType (see cmake/CryVendor.cmake),
+# because it is C rather than C++ and follows its own one-TU-per-module build
+# convention.
 ################################################################################
 
 cry_add_module(CryFont
@@ -28,4 +26,5 @@ cry_add_module(CryFont
         "${CMAKE_CURRENT_SOURCE_DIR}/FreeType2"
     DEPENDS
         CryCommon
+        CryFreeType
 )
