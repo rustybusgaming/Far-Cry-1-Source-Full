@@ -46,6 +46,7 @@ class CNULLRenderer : public CRenderer
   // See RenderDll/XRenderGLES/GLESRenderer.h for why the backend is built this
   // way and how the dependency is meant to disappear.
   friend class CGLESRenderer;
+  friend class CWGPURenderer;
 
 public: 
 
