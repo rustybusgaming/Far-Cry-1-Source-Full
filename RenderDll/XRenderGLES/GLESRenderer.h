@@ -109,7 +109,38 @@ public:
 
 	virtual void	CheckError(const char* comment);
 
+	//! Reads the framebuffer back into system memory. The engine uses this for
+	//! screenshots; it is also the only way to see what was actually drawn, so
+	//! it is what the browser test samples.
+	virtual void	ReadFrameBuffer(unsigned char* pRGB, int nSizeX, int nSizeY,
+	                                bool bBackBuffer, bool bRGBA,
+	                                int nScaledX = -1, int nScaledY = -1);
+
+	//////////////////////////////////////////////////////////////////////
+	// Drawing. GLES has no fixed-function pipeline, so where the original
+	// backend could enable texturing and call glBegin, everything here goes
+	// through a compiled program and a vertex buffer.
+	//////////////////////////////////////////////////////////////////////
+	virtual void	Set2DMode(bool enable, int ortox, int ortoy);
+
+	virtual void*	GetDynVBPtr(int nVerts, int& nOffs, int Pool);
+	virtual void	DrawDynVB(int nOffs, int Pool, int nVerts);
+	virtual void	DrawDynVB(struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F* pBuf, ushort* pInds,
+	                          int nVerts, int nInds, int nPrimType);
+
+	//! Free the GL objects the drawing path owns. Separate from ShutDown so a
+	//! context loss can be recovered from without tearing the renderer down.
+	void			ReleaseDrawResources();
+
 private:
+	//! Upload and draw through the dynamic program. The single place that
+	//! issues geometry, so state setup exists once.
+	void			DrawDynamic(const struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F* pVerts, int nVerts,
+	                            const unsigned short* pInds, int nInds, int nPrimType);
+
+	//! Lazily create the VAO and the two buffers.
+	bool			EnsureDynamicBuffers();
+
 	//! What Init() was asked for, kept so ChangeResolution can act without a
 	//! second round trip to the browser.
 	int		m_nCanvasWidth;
@@ -120,6 +151,31 @@ private:
 	float	m_fClearColor[4];
 
 	bool	m_bContextCreated;
+
+	//////////////////////////////////////////////////////////////////////
+	// The dynamic drawing path.
+	//////////////////////////////////////////////////////////////////////
+
+	//! Model-view-projection handed to the program. The engine's matrix API is
+	//! the fixed-function one -- PushMatrix, MultMatrix, LoadMatrix -- and
+	//! GLES has none of it, so the backend keeps the matrix itself. Only the
+	//! 2D orthographic case is filled in so far, which is what Set2DMode and
+	//! everything drawn in screen space needs.
+	float			m_matMVP[16];
+	bool			m_b2DMode;
+
+	unsigned int	m_nDynVAO;
+	unsigned int	m_nDynVBO;
+	unsigned int	m_nDynIBO;
+	int				m_nDynVBOCapacity;	//!< bytes currently allocated
+	int				m_nDynIBOCapacity;
+
+	//! Staging for the pooled GetDynVBPtr/DrawDynVB pair, which hands the
+	//! caller a pointer to fill and then asks for it to be drawn by offset.
+	//! CryFont is the caller that matters.
+	void*			m_pDynPool;
+	int				m_nDynPoolVerts;
+	int				m_nDynPoolUsed;
 };
 
 #endif //_CRY_GLES_RENDERER_H_

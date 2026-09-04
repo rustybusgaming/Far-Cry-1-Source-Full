@@ -60,6 +60,19 @@ def main():
     if "--frames" in sys.argv:
         want_frames = int(sys.argv[sys.argv.index("--frames") + 1])
 
+    # Optional pixel assertions, as R,G,B. The host samples the framebuffer
+    # through IRenderer::ReadFrameBuffer and publishes the values; checking
+    # them here is what turns "the loop ran" into "the engine drew the right
+    # thing". A centre and a corner together also prove the geometry landed
+    # somewhere rather than covering everything.
+    def rgb_arg(flag):
+        if flag not in sys.argv:
+            return None
+        return [int(v) for v in sys.argv[sys.argv.index(flag) + 1].split(",")]
+
+    want_centre = rgb_arg("--expect-centre")
+    want_corner = rgb_arg("--expect-corner")
+
     page = os.path.abspath(sys.argv[1])
     directory = os.path.dirname(page)
     name = os.path.basename(page)
@@ -126,6 +139,21 @@ def main():
                     frames = pg.evaluate("window.__cryFrame")
                     print("rendered %d frames" % frames)
                     failures = 0
+
+                    for name, want, prefix in (("centre", want_centre, "__cryCentre"),
+                                               ("corner", want_corner, "__cryCorner")):
+                        if want is None:
+                            continue
+                        pg.wait_for_function(
+                            "window.%sR !== undefined" % prefix, timeout=60000)
+                        got = [pg.evaluate("window.%s%s" % (prefix, c))
+                               for c in ("R", "G", "B")]
+                        # One step of tolerance for float-to-unorm rounding.
+                        ok = all(abs(a - b) <= 1 for a, b in zip(got, want))
+                        print("%-6s pixel %s (wanted %s) %s"
+                              % (name, got, want, "ok" if ok else "MISMATCH"))
+                        if not ok:
+                            failures += 1
             else:
                 pg.wait_for_function("window.__cryTestDone === true", timeout=120000)
                 failures = pg.evaluate("window.__cryTestFailures")

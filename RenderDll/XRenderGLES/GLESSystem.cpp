@@ -29,9 +29,21 @@ CGLESRenderer::CGLESRenderer()
 	: m_nCanvasWidth(0)
 	, m_nCanvasHeight(0)
 	, m_bContextCreated(false)
+	, m_b2DMode(false)
+	, m_nDynVAO(0)
+	, m_nDynVBO(0)
+	, m_nDynIBO(0)
+	, m_nDynVBOCapacity(0)
+	, m_nDynIBOCapacity(0)
+	, m_pDynPool(0)
+	, m_nDynPoolVerts(0)
+	, m_nDynPoolUsed(0)
 {
 	m_fClearColor[0] = m_fClearColor[1] = m_fClearColor[2] = 0.0f;
 	m_fClearColor[3] = 1.0f;
+
+	memset(m_matMVP, 0, sizeof(m_matMVP));
+	m_matMVP[0] = m_matMVP[5] = m_matMVP[10] = m_matMVP[15] = 1.0f;
 }
 
 CGLESRenderer::~CGLESRenderer()
@@ -107,6 +119,10 @@ void CGLESRenderer::ShutDown(bool bReInit)
 	FreeResources(FRR_ALL);
 	EF_PipelineShutdown();
 	CName::mfExitSubsystem();
+
+	// Before the context goes: the GL objects are only meaningful while it
+	// lives, and deleting them afterwards would be operating on a dead context.
+	ReleaseDrawResources();
 
 	if (m_bContextCreated)
 	{

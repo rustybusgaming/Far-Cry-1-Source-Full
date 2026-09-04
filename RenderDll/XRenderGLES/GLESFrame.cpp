@@ -12,6 +12,8 @@
 #include "GLESRenderer.h"
 #include "GLESContext.h"
 
+#include <stdlib.h>
+
 #if defined(__EMSCRIPTEN__)
 #include <GLES3/gl3.h>
 #endif
@@ -167,5 +169,52 @@ void CGLESRenderer::CheckError(const char* comment)
 	}
 
 	iLog->LogError("XRenderGLES: %s at %s", szName, comment ? comment : "<no context>");
+#endif
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! Read the framebuffer back into system memory.
+//!
+//! glReadPixels is a hard synchronisation point: it has to wait for every
+//! queued draw to finish before it can answer, and on the web the answer also
+//! crosses back out of the GPU process. It is fine for a screenshot and ruinous
+//! per frame, which is why nothing in the frame path calls it.
+//!
+//! GLES 3.0 guarantees exactly one always-supported format/type combination for
+//! reads -- GL_RGBA with GL_UNSIGNED_BYTE. GL_RGB is allowed to be rejected, so
+//! an RGB request is read as RGBA and narrowed here rather than being handed
+//! to the driver and hoping.
+//////////////////////////////////////////////////////////////////////////
+void CGLESRenderer::ReadFrameBuffer(unsigned char* pRGB, int nSizeX, int nSizeY,
+                                    bool bBackBuffer, bool bRGBA,
+                                    int nScaledX, int nScaledY)
+{
+#if defined(__EMSCRIPTEN__)
+	if (!pRGB || nSizeX <= 0 || nSizeY <= 0 || !GLESContext_IsCreated())
+		return;
+
+	if (bRGBA)
+	{
+		glReadPixels(0, 0, nSizeX, nSizeY, GL_RGBA, GL_UNSIGNED_BYTE, pRGB);
+		return;
+	}
+
+	unsigned char* pTemp = (unsigned char*)malloc((size_t)nSizeX * nSizeY * 4);
+	if (!pTemp)
+	{
+		iLog->LogError("XRenderGLES: out of memory reading back %dx%d", nSizeX, nSizeY);
+		return;
+	}
+
+	glReadPixels(0, 0, nSizeX, nSizeY, GL_RGBA, GL_UNSIGNED_BYTE, pTemp);
+
+	for (int i = 0, n = nSizeX * nSizeY; i < n; ++i)
+	{
+		pRGB[i * 3 + 0] = pTemp[i * 4 + 0];
+		pRGB[i * 3 + 1] = pTemp[i * 4 + 1];
+		pRGB[i * 3 + 2] = pTemp[i * 4 + 2];
+	}
+
+	free(pTemp);
 #endif
 }

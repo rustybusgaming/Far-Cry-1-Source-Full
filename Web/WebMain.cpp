@@ -38,6 +38,7 @@
 #include <ILog.h>
 #include <IConsole.h>
 #include <IRenderer.h>
+#include <VertexFormats.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -71,6 +72,108 @@ static void WebCheckFunc(void*)
 }
 
 //////////////////////////////////////////////////////////////////////////
+//! Draw something, through the engine's own API rather than around it.
+//!
+//! This goes in via IRenderer::DrawDynVB -- the same entry point CryFont uses
+//! for text and CryGame's script renderer uses for debug geometry -- so what it
+//! exercises is the real path: Set2DMode's projection, the GLSL ES program, the
+//! dynamic vertex buffer, and the quad-to-triangle expansion GLES needs because
+//! it has no GL_QUADS.
+//!
+//! It is a stand-in for a scene, not a stand-in for the renderer. When the
+//! world starts drawing, this comes out.
+//////////////////////////////////////////////////////////////////////////
+static void DrawProofOfLife(IRenderer* pRenderer)
+{
+	const int nWidth  = pRenderer->GetWidth();
+	const int nHeight = pRenderer->GetHeight();
+	if (nWidth <= 0 || nHeight <= 0)
+		return;
+
+	// Screen space, y down from the top-left -- the engine's 2D convention.
+	pRenderer->Set2DMode(true, nWidth, nHeight);
+
+	// A quad over the middle quarter of the screen, so a test can sample the
+	// centre and a corner and tell them apart.
+	const float x0 = nWidth  * 0.25f, x1 = nWidth  * 0.75f;
+	const float y0 = nHeight * 0.25f, y1 = nHeight * 0.75f;
+
+	struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F v[4];
+	memset(v, 0, sizeof(v));
+
+	v[0].xyz = Vec3(x0, y0, 0.0f);
+	v[1].xyz = Vec3(x1, y0, 0.0f);
+	v[2].xyz = Vec3(x1, y1, 0.0f);
+	v[3].xyz = Vec3(x0, y1, 0.0f);
+
+	// UCol is B,G,R,A when gbRgb is false, which is what every backend in this
+	// tree sets. Writing the bytes in that order here -- rather than picking
+	// whatever looks right -- is what makes this a test of the shader's
+	// swizzle. Wanted: R=0x20, G=0x80, B=0xE0.
+	for (int i = 0; i < 4; ++i)
+	{
+		v[i].color.bcolor[0] = 0xE0;	// blue
+		v[i].color.bcolor[1] = 0x80;	// green
+		v[i].color.bcolor[2] = 0x20;	// red
+		v[i].color.bcolor[3] = 0xFF;	// alpha
+	}
+
+	unsigned short inds[4] = { 0, 1, 2, 3 };
+	pRenderer->DrawDynVB(v, inds, 4, 4, R_PRIMV_QUADS);
+
+	pRenderer->Set2DMode(false, nWidth, nHeight);
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! Sample the framebuffer and hand the values to the page.
+//!
+//! This is how the browser test sees what was drawn. Reading the canvas from
+//! JavaScript would not work: the context is created without
+//! preserveDrawingBuffer, so by the time script runs the buffer may already
+//! have been presented and cleared. Reading inside the frame, before yielding,
+//! is the only reliable moment -- and it is what a screenshot does anyway.
+//////////////////////////////////////////////////////////////////////////
+static void PublishPixelSample(IRenderer* pRenderer)
+{
+	const int w = pRenderer->GetWidth();
+	const int h = pRenderer->GetHeight();
+	if (w <= 0 || h <= 0)
+		return;
+
+	unsigned char* pPixels = (unsigned char*)malloc((size_t)w * h * 4);
+	if (!pPixels)
+		return;
+
+	pRenderer->ReadFrameBuffer(pPixels, w, h, true, true);
+
+	// glReadPixels' origin is bottom-left, so row 0 is the bottom of the
+	// screen. The centre is unaffected by that; the corner sample is taken
+	// from row 0 either way, which is a corner regardless of orientation.
+	const int nCentre = ((h / 2) * w + (w / 2)) * 4;
+	const int nCorner = 0;
+
+	printf("[web] centre pixel %d,%d,%d  corner %d,%d,%d\n",
+	       pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
+	       pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2]);
+
+	// No commas inside the braced block: EM_ASM is a macro, and the
+	// preprocessor splits its arguments on any top-level comma -- including
+	// the ones in a JavaScript array literal. Six scalars avoid the trap.
+	EM_ASM({
+		window.__cryCentreR = $0;
+		window.__cryCentreG = $1;
+		window.__cryCentreB = $2;
+		window.__cryCornerR = $3;
+		window.__cryCornerG = $4;
+		window.__cryCornerB = $5;
+	},
+	pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
+	pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2]);
+
+	free(pPixels);
+}
+
+//////////////////////////////////////////////////////////////////////////
 //! One frame.
 //!
 //! The ordering is CGame::Run's: BeginFrame, then the world, then Update to
@@ -100,6 +203,8 @@ static void WebFrame(void*)
 
 	pRenderer->BeginFrame();
 
+	DrawProofOfLife(pRenderer);
+
 	// ISystem::Update drives the timer, console, streaming, input and the
 	// script system. It returns false when something has asked to quit.
 	if (!g_host.pSystem->Update(0, 0))
@@ -113,6 +218,15 @@ static void WebFrame(void*)
 	pRenderer->Update();
 
 	++g_host.nFrame;
+
+	// Once, a few frames in, sample what actually reached the framebuffer and
+	// publish it. Through IRenderer::ReadFrameBuffer rather than a direct GL
+	// call, so the check goes through the engine's API like everything else.
+	//
+	// A few frames in rather than the first because the program and buffers
+	// are built on first use, and the point is to sample a steady state.
+	if (g_host.nFrame == 5)
+		PublishPixelSample(pRenderer);
 
 	// Publish progress where a page -- and the browser test -- can see it.
 	// Reading a wasm global from JavaScript means knowing its address; a

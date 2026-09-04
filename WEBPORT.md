@@ -851,10 +851,62 @@ this view of missing `.pak` archives, and a font is no more fundamental than
 the archives that contain one. The consequence is real and logged: no font
 means no console or HUD text.
 
+## The engine draws
+
+`IRenderer::DrawDynVB` now works. That is the engine's generic dynamic-geometry
+entry point — CryFont builds text through it, six vertices per glyph, and
+CryGame's script renderer uses it for debug geometry — so implementing it lights
+up the real path rather than a demo one:
+
+```
+XRenderGLES: dynamic-vertex program built
+[web] centre pixel 32,128,224  corner 0,0,0
+```
+
+The host draws a quad over the middle of the screen in `0x20,0x80,0xE0` and
+samples the framebuffer back through `IRenderer::ReadFrameBuffer`. Centre
+matches exactly; the corner is the clear. `web_host_frames` asserts both, and
+was verified to fail on a wrong channel.
+
+Four things had to be right for that pixel to be right, which is why it is worth
+asserting rather than eyeballing:
+
+- **A GLSL ES program exists at all.** GLES has no fixed-function pipeline.
+  Where the original backend could enable texturing and call `glBegin`, nothing
+  can be drawn here without a compiled program.
+- **The colour swizzle.** The engine packs `UCol` as **B,G,R,A** when `gbRgb` is
+  false, which every backend in this tree sets — it is the Direct3D byte order,
+  and the GL backends asked the driver for `GL_BGRA` to compensate. GLES 3.0 has
+  no BGRA vertex format, so the bytes are read in their natural order and
+  reordered in the shader. Free there; a per-vertex CPU pass otherwise.
+- **Quads.** GLES has no `GL_QUADS` and the engine uses `R_PRIMV_QUADS` freely
+  (2D images, sprites). Each quad is expanded to two triangles at draw time,
+  which keeps it a backend concern instead of a change every caller has to make.
+- **The vertical flip.** Screen space here has y increasing *downward* — the
+  engine positions 2D from the top-left, as Windows does — while GL clip space
+  has y up. `Set2DMode`'s ortho passes `top=0, bottom=h` to invert it. Get this
+  wrong and text renders upside down.
+
+Two smaller notes. The dynamic pool is CPU memory uploaded at draw time rather
+than a mapped buffer, because **WebGL has no `glMapBufferRange`** — there is no
+pointer into GPU memory to hand across the JavaScript boundary. And the vertex
+layout is recorded once in a VAO rather than re-specified per draw, since each
+`glVertexAttribPointer` is a separate crossing into JavaScript.
+
+`ReadFrameBuffer` is implemented for real (it is what screenshots use). It reads
+`GL_RGBA`/`GL_UNSIGNED_BYTE` — the one combination GLES 3.0 guarantees — and
+narrows to RGB itself rather than handing `GL_RGB` to a driver that is permitted
+to reject it. Nothing in the frame path calls it: `glReadPixels` is a hard
+synchronisation point, and on the web the answer also has to cross back out of
+the GPU process.
+
 ### Next
 
-Vertex buffers, then the shading pipeline in GLSL ES. Nothing draws geometry
-yet — what reaches the canvas is the clear.
+Textures, then the shading pipeline. `DrawDynVB` is untextured so far —
+`uUseTexture` is wired in the shader and always 0, because the texture manager
+has not been written against GLES yet. After that, the static vertex buffers the
+world geometry uses, and then the shader translation itself, which remains the
+largest single piece of work in the renderer.
 
 ---
 

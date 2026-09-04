@@ -88,7 +88,15 @@ if(EMSCRIPTEN)
         add_test(NAME web_host_frames
                  COMMAND ${Python3_EXECUTABLE}
                          "${CMAKE_CURRENT_SOURCE_DIR}/web/run_browser_tests.py"
-                         "$<TARGET_FILE:CryWeb>" --frames 30)
+                         "$<TARGET_FILE:CryWeb>" --frames 30
+                         # The quad Web/WebMain.cpp draws through
+                         # IRenderer::DrawDynVB, sampled back through
+                         # IRenderer::ReadFrameBuffer. The centre must be the
+                         # quad's colour and the corner the clear, which
+                         # together show the geometry landed in the right place
+                         # and the BGRA-to-RGBA swizzle is right.
+                         --expect-centre 32,128,224
+                         --expect-corner 0,0,0)
         set_tests_properties(web_host_frames PROPERTIES TIMEOUT 300)
     endif()
 endif()

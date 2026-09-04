@@ -254,6 +254,8 @@ if(EMSCRIPTEN)
         XRenderGLES/GLESContext.cpp
         XRenderGLES/GLESSystem.cpp
         XRenderGLES/GLESFrame.cpp
+        XRenderGLES/GLESShader.cpp
+        XRenderGLES/GLESDraw.cpp
         INCLUDES ${CRY_RENDER_INCLUDES}
                  "${CMAKE_CURRENT_SOURCE_DIR}/XRenderGLES"
         DEPENDS  CryCommon
