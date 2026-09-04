@@ -37,6 +37,16 @@ class CNULLRenderer : public CRenderer
 {
   friend class CNULLTexMan;
 
+  // [webport] CGLESRenderer (RenderDll/XRenderGLES) derives from this class and
+  // overrides the system and context layer, taking the rest -- Crytek's own
+  // draw-nothing implementation -- as the behaviour of the entry points it has
+  // not written yet. It needs the private pipeline hooks below for that, since
+  // Init() and ShutDown() are two of the methods it replaces.
+  //
+  // See RenderDll/XRenderGLES/GLESRenderer.h for why the backend is built this
+  // way and how the dependency is meant to disappear.
+  friend class CGLESRenderer;
+
 public: 
 
   CNULLRenderer();

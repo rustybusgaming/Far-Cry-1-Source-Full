@@ -38,7 +38,7 @@
 # work starts from a running engine instead of a compiling one.
 #
 # Not built yet:
-#   XRenderOGL         71k lines of OpenGL 1.x -- immediate mode, NV register
+#   XRenderOGL         45.7k lines of OpenGL 1.x -- immediate mode, NV register
 #                      combiners, WGL context creation and Cg shaders whose
 #                      cgGL.lib is a binary blob. The WebGL2 rewrite.
 #   XRenderD3D8/D3D9   Direct3D; no path to the web at all.
@@ -153,3 +153,116 @@ target_compile_definitions(CryRenderNULL PRIVATE NULL_RENDERER)
 # They still COMPILE -- tools/triage.py covers them -- they are simply not part
 # of this backend's link.
 # ------------------------------------------------------------------------------
+
+
+################################################################################
+# CryRenderGLES -- the WebGL2 backend, under construction.
+#
+# Same Common sources as the null backend, plus every one of XRenderNULL's own
+# sources EXCEPT NULL_System.cpp, plus this backend's files on top.
+#
+# The exclusion is the mechanism, not an oversight. NULL_System.cpp holds
+# CNULLRenderer's system and context layer -- Init, ShutDown, the context
+# calls, resolution, gamma -- and CGLESRenderer derives from CNULLRenderer.
+# Leaving that one file out means those thirteen methods have no definition in
+# this target, so the link fails until XRenderGLES supplies them. They are
+# exactly the ones a real backend cannot inherit.
+#
+# Everything else falls back to Crytek's own draw-nothing implementation, which
+# is the correct behaviour for a backend entry point that is not written yet,
+# and makes progress measurable: what is real is what CGLESRenderer overrides.
+# When the last subsystem moves from inherited to overridden, the XRenderNULL
+# sources drop out of this list and the backend stands alone.
+#
+# NULL_RENDERER stays defined. It is what removes the references to
+# CPShader::mfForName, the nvDXT/ATI compressors and the Intel JPEG library
+# (see the header comment above) -- none of which can exist in a web build, and
+# none of which the GLES shading path will use, since that is being written
+# against GLSL ES rather than the assembly and register-combiner pipeline those
+# guards belong to.
+################################################################################
+
+if(EMSCRIPTEN)
+    cry_add_module(CryRenderGLES
+        SOURCES
+    RenderPCH.cpp
+    Common/3DUtils.cpp
+    Common/CRT.cpp
+    Common/EvalFuncs_C.cpp
+    Common/EvalFuncs_RE.cpp
+    Common/LeafBufferCreate.cpp
+    Common/LeafBufferRender.cpp
+    Common/LeafBufferSerialize.cpp
+    Common/LightMaterial.cpp
+    Common/Names.cpp
+    Common/NvTriStrip/NvTriStrip.cpp
+    Common/NvTriStrip/NvTriStripObjects.cpp
+    Common/RendElements/CRE2DQuad.cpp
+    Common/RendElements/CREBeam.cpp
+    Common/RendElements/CREClientPoly.cpp
+    Common/RendElements/CREClientPoly2D.cpp
+    Common/RendElements/CREDummy.cpp
+    Common/RendElements/CREFlares.cpp
+    Common/RendElements/CREGlare.cpp
+    Common/RendElements/CREHDRProcess.cpp
+    Common/RendElements/CREOcLeaf.cpp
+    Common/RendElements/CREOcean.cpp
+    Common/RendElements/CREOclusionQuery.cpp
+    Common/RendElements/CREParticleSpray.cpp
+    Common/RendElements/CREPolyBlend.cpp
+    Common/RendElements/CREPolyMesh.cpp
+    Common/RendElements/CREPrefabGeom.cpp
+    Common/RendElements/CREScreenProcess.cpp
+    Common/RendElements/CREShadowMap.cpp
+    Common/RendElements/CRESky.cpp
+    Common/RendElements/CRETempMesh.cpp
+    Common/RendElements/CRETerrainSector.cpp
+    Common/RendElements/CRETriMeshAdditionalShadow.cpp
+    Common/RendElements/CRETriMeshShadow.cpp
+    Common/RendElements/FFT_SSE.cpp
+    Common/RendElements/RendElement.cpp
+    Common/Renderer.cpp
+    Common/ResFile.cpp
+    Common/Shaders/Parser.cpp
+    Common/Shaders/ShaderComponents.cpp
+    Common/Shaders/ShaderCore.cpp
+    Common/Shaders/ShaderParse.cpp
+    Common/Shaders/ShaderScript.cpp
+    Common/Shaders/ShaderTemplate.cpp
+    Common/Textures/Image/BmpImage.cpp
+    Common/Textures/Image/CImage.cpp
+    Common/Textures/Image/DDSImage.cpp
+    Common/Textures/Image/JpgImage.cpp
+    Common/Textures/Image/PcxImage.cpp
+    Common/Textures/Image/Quantize.cpp
+    Common/Textures/Image/TgaImage.cpp
+    Common/Textures/Image/inv_cmap.cpp
+    Common/Textures/TexMan.cpp
+    Common/Textures/TexManShadows.cpp
+    Common/Textures/TexManStreaming.cpp
+    Common/pip_addons.cpp
+    XRenderNULL/NULL_Font.cpp
+    XRenderNULL/NULL_REOcean.cpp
+    XRenderNULL/NULL_RERender.cpp
+    XRenderNULL/NULL_RendPipeline.cpp
+    XRenderNULL/NULL_Renderer.cpp
+    XRenderNULL/NULL_Shaders.cpp
+    XRenderNULL/NULL_Shadows.cpp
+    XRenderNULL/NULL_Textures.cpp
+    XRenderNULL/NULL_TexturesStreaming.cpp
+    XRenderNULL/NULL_VertBuffer.cpp
+        XRenderGLES/GLESContext.cpp
+        XRenderGLES/GLESSystem.cpp
+        XRenderGLES/GLESFrame.cpp
+        INCLUDES ${CRY_RENDER_INCLUDES}
+                 "${CMAKE_CURRENT_SOURCE_DIR}/XRenderGLES"
+        DEPENDS  CryCommon
+    )
+    target_compile_definitions(CryRenderGLES PRIVATE NULL_RENDERER)
+else()
+    # No GL on this target: no /usr/include/GL, no EGL. The backend exists for
+    # WebGL2, and a native GLES path would need EGL with a surfaceless platform
+    # extension -- worth adding only as a debugging aid. See
+    # XRenderGLES/GLESContext.cpp for the non-Emscripten branch.
+    message(STATUS "cry: CryRenderGLES skipped (needs Emscripten)")
+endif()

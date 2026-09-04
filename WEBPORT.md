@@ -507,7 +507,7 @@ without any shader work. The remaining pieces are known:
 
 ### Milestone 4 — the rasteriser
 
-`XRenderOGL` is 71k lines and the only complete GL backend, but it is OpenGL
+`XRenderOGL` is 45,733 lines and the only complete GL backend, but it is OpenGL
 1.x: 74 `glBegin` immediate-mode sites, 44 references to
 `GL_NV_register_combiners`, WGL context creation, and NVIDIA Cg shaders whose
 `cgGL.lib` is a binary blob with no source. WebGL2 (GLES 3.0) supports none of
@@ -697,6 +697,98 @@ target uses neither and both are expensive. `wasm-ld` also needs no
 `--start-group`: it resolves the whole program's symbol table at once instead of
 in one left-to-right pass, so the circular module dependencies that force a
 link group on GNU ld are a non-issue there.
+
+---
+
+## The renderer
+
+### What actually stands in the way
+
+`XRenderOGL` is **45,733 lines** (not the 71k quoted in an earlier version of
+this document — that was wrong). Counting call sites in its `.cpp` files, with
+the declaration table excluded:
+
+| Feature | Call sites | Status in WebGL2 |
+|---|---:|---|
+| `glVertex*` / `glBegin` immediate mode | 595 / 69 | removed |
+| Fixed-function matrix stack | 206 | removed |
+| `wgl*` context creation | 205 | Windows-only |
+| `glTexEnv*` fixed-function texture env | 90 | removed |
+| NV register combiners | 85 | removed |
+| `glDrawPixels` / `glRasterPos` / `glBitmap` | 78 | removed |
+| Client-side vertex arrays | 70 | removed (VBO + attribs only) |
+| `GL_QUADS` / `GL_POLYGON` | 54 | removed |
+| ARB/NV assembly programs | 22 | removed |
+| ATI fragment shader | 12 | removed |
+
+Essentially every drawing path uses something WebGL2 does not have. This is not
+a port; the backend has to be rewritten. What *is* reusable is
+`RenderDll/Common` — shader parsing, texture management, render elements, leaf
+buffers — which is backend-independent source each backend compiles with its
+own defines, exactly as `XRenderNULL` does.
+
+### How the new backend is being built
+
+`IRenderer` has 250 pure virtuals; `CRenderer` in `Common` implements most of
+them; a backend fills in about a hundred. `XRenderNULL` is a complete working
+implementation of every one in ~2,000 lines that draws nothing.
+
+So `CGLESRenderer` **derives from `CNULLRenderer`** and overrides what it has
+implemented for real. Three properties make this worth doing over stubbing a
+fresh class:
+
+- The unimplemented tail is not stubs I wrote — it is Crytek's own draw-nothing
+  implementation, which is the correct behaviour for an unfinished entry point.
+- Progress cannot be faked: what is real is what `CGLESRenderer` overrides, and
+  everything else is visibly inherited. "How far along is the renderer" has an
+  exact answer at any moment.
+- **The build enforces the split.** `CryRenderGLES` compiles every
+  `XRenderNULL` source *except* `NULL_System.cpp`, which is where
+  `CNULLRenderer`'s system and context layer lives. Leaving it out means those
+  thirteen methods have no definition, so the link fails until the GLES backend
+  supplies them — and they are precisely the ones a real backend cannot
+  inherit: context creation, resolution, gamma, resource lifetime, shutdown.
+
+It is a scaffold with a deliberate demolition order. As each subsystem is
+written against GLES its methods move from inherited to overridden, and when
+the last one moves, the dependency on `XRenderNULL` drops out of the CMake
+target.
+
+### What works today
+
+A live WebGL2 context created by the engine's own renderer, with viewport,
+buffer clears and frame begin/present. Verified in headless Chromium:
+
+```
+[gles] WebGL2 context on '#canvas', 320x240
+[gles]   renderer : WebKit WebGL
+[gles]   version  : OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium))
+[gles]   max tex 8192, cube 16384, units 32, attribs 16, MRT 6, samples 4
+[gles]   anisotropic yes, S3TC yes
+info: centre pixel = 64,128,191,255
+```
+
+That last line is the point: the engine cleared to 0.25/0.50/0.75 and the pixel
+read back is exactly 64/128/191. Nothing draws geometry yet.
+
+**S3TC is available**, which matters more than it looks — Far Cry's textures are
+DXT1/3/5, so they can be uploaded compressed instead of being decompressed on
+the CPU into a 32-bit heap.
+
+`tests/web/run_browser_tests.py` serves the build over HTTP (wasm cannot be
+fetched from `file://`) and drives headless Chromium through Playwright. It
+links `GLESContext.cpp` itself rather than a copy, so it covers the code that
+ships; verified to fail when one channel of the clear colour is changed.
+
+### Next
+
+The main loop. In a browser the drawing buffer is presented when the task that
+drew it yields to the event loop — there is no `SwapBuffers` to call. The
+engine's `while(!quit)` never yields, so nothing would ever appear. Headless
+sidesteps this by never entering that loop, which is exactly why it can be
+tested today. After that: vertex buffers, then the shading pipeline in GLSL ES.
+
+---
 
 ### Known hard blockers
 

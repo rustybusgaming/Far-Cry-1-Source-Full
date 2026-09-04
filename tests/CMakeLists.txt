@@ -48,3 +48,36 @@ set_tests_properties(headless_boot PROPERTIES
     PASS_REGULAR_EXPRESSION "System interface created"
     FAIL_REGULAR_EXPRESSION "FAILED: CreateSystemInterface"
 )
+
+# ------------------------------------------------------------------------------
+# Browser tests.
+#
+# These need a real browser and so are built only for wasm. They are driven by
+# tests/web/run_browser_tests.py, which serves the build over HTTP -- wasm
+# cannot be loaded from a file:// URL -- and drives headless Chromium through
+# Playwright.
+# ------------------------------------------------------------------------------
+if(EMSCRIPTEN)
+    # The WebGL2 context the renderer creates. Links GLESContext.cpp itself
+    # rather than a copy, so this covers the code that actually ships.
+    add_executable(test_glescontext
+        web/test_glescontext.cpp
+        "${PROJECT_SOURCE_DIR}/RenderDll/XRenderGLES/GLESContext.cpp")
+    target_include_directories(test_glescontext PRIVATE
+        "${PROJECT_SOURCE_DIR}/RenderDll/XRenderGLES")
+    # A canvas is required, so this is an HTML target rather than bare JS.
+    set_target_properties(test_glescontext PROPERTIES SUFFIX ".html")
+    target_link_options(test_glescontext PRIVATE
+        "SHELL:-s MIN_WEBGL_VERSION=2"
+        "SHELL:-s MAX_WEBGL_VERSION=2"
+        "SHELL:-s OFFSCREENCANVAS_SUPPORT=0")
+
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME glescontext_browser
+                 COMMAND ${Python3_EXECUTABLE}
+                         "${CMAKE_CURRENT_SOURCE_DIR}/web/run_browser_tests.py"
+                         "$<TARGET_FILE:test_glescontext>")
+        set_tests_properties(glescontext_browser PROPERTIES TIMEOUT 300)
+    endif()
+endif()
