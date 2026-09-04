@@ -82,6 +82,14 @@ def main():
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
+        # A local checkout without playwright still builds and runs everything
+        # else; only the browser checks are unavailable. CI installs it, so a
+        # skip there would be a misconfiguration rather than a normal state --
+        # hence CRY_REQUIRE_BROWSER, which CI sets to turn this into an error.
+        if os.environ.get("CRY_REQUIRE_BROWSER"):
+            print("playwright is not installed and CRY_REQUIRE_BROWSER is set",
+                  file=sys.stderr)
+            return 1
         print("SKIP: playwright is not installed", file=sys.stderr)
         return 0
 
@@ -111,11 +119,10 @@ def main():
         if os.path.exists(candidate):
             exe = candidate
 
-    if exe is None:
-        print("SKIP: no Chromium found under /opt/pw-browsers", file=sys.stderr)
-        httpd.shutdown()
-        return 0
-    print("chromium: %s" % exe)
+    # No pre-installed Chromium: fall back to whatever Playwright manages
+    # itself, which is the normal arrangement on CI. Skipping here instead
+    # would quietly drop the only tests that check real pixels.
+    print("chromium: %s" % (exe if exe else "<playwright-managed>"))
 
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=exe, args=[
