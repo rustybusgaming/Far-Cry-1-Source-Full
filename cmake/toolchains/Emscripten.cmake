@@ -41,35 +41,75 @@ endif()
 set(CRY_WASM_INITIAL_MEMORY 512MB CACHE STRING "Initial wasm heap")
 set(CRY_WASM_MAXIMUM_MEMORY 2GB   CACHE STRING "Maximum wasm heap")
 
-add_compile_options(
-    -pthread                    # CrySystem's streaming engine is genuinely threaded
-)
+# ------------------------------------------------------------------------------
+# C++ exceptions
+#
+# Emscripten disables exception CATCHING by default -- a throw compiles, but
+# reaching one at runtime aborts the module with "Exception thrown, but
+# exception catching is not enabled". The engine genuinely needs them: CryPak
+# opens every .pak through ZipDir, which reports a missing or corrupt archive by
+# throwing, and CSystem catches it and carries on with the file missing. With
+# catching off, the first absent pak kills startup instead of logging.
+#
+# This is the "emscripten" exception mode (JS-based), which is slower than the
+# native wasm EH proposal but works on every browser. Revisit -fwasm-exceptions
+# once the baseline browser set supports it.
+# ------------------------------------------------------------------------------
+add_compile_options(-fexceptions)
+add_link_options(-fexceptions)
 
+# ------------------------------------------------------------------------------
+# Memory
+# ------------------------------------------------------------------------------
 add_link_options(
-    -pthread
     "SHELL:-s ALLOW_MEMORY_GROWTH=1"
     "SHELL:-s INITIAL_MEMORY=${CRY_WASM_INITIAL_MEMORY}"
     "SHELL:-s MAXIMUM_MEMORY=${CRY_WASM_MAXIMUM_MEMORY}"
 
     # The engine's DLL-per-module layout collapses into a single link unit;
-    # nothing is dlopen'd at runtime on the web.
+    # nothing is dlopen'd at runtime on the web. See CryCommon/StaticModules.h.
     "SHELL:-s MAIN_MODULE=0"
 
     # Renderer target. WebGL2 == GLES 3.0, which is the floor for the shader
-    # rewrite in Milestone 4 -- the original GL path is GL 1.x with NV register
-    # combiners and Cg, none of which survives.
+    # rewrite -- the original GL path is GL 1.x with NV register combiners and
+    # Cg, none of which survives.
     "SHELL:-s MIN_WEBGL_VERSION=2"
     "SHELL:-s MAX_WEBGL_VERSION=2"
 
     # Game data is far too large to preload into MEMFS; assets get streamed.
     "SHELL:-s FORCE_FILESYSTEM=1"
 
-    # The engine's entry point blocks in a classic while(!quit) loop, which
-    # cannot work on the browser's single-threaded event loop. Asyncify lets it
-    # keep that structure while yielding; the alternative is restructuring the
-    # main loop around emscripten_set_main_loop (Milestone 3).
-    "SHELL:-s ASYNCIFY=1"
+    # Node needs this to exit(0) normally rather than trapping; harmless in a
+    # browser, where nothing calls exit anyway.
+    "SHELL:-s EXIT_RUNTIME=1"
 )
+
+# ------------------------------------------------------------------------------
+# Deferred: threads and Asyncify
+#
+# Both were switched on speculatively when this file was written, before there
+# was a build to test them against. They are off now because the headless target
+# does not need either, and both are expensive:
+#
+#   pthreads   CrySystem's streaming engine is genuinely threaded, but the web
+#              port does not use it -- CSyncStreamEngine reads synchronously
+#              (see CrySystem/SyncStreamEngine.h). Turning -pthread on requires
+#              SharedArrayBuffer, which requires COOP/COEP headers on the page,
+#              and every allocation goes through the shared-memory path. Nothing
+#              yet asks for it.
+#
+#   ASYNCIFY   Needed to keep the engine's blocking while(!quit) main loop on
+#              the browser's single-threaded event loop. The headless target
+#              initialises and releases without ever entering that loop, so it
+#              costs a large size and speed penalty for nothing. It becomes
+#              relevant when the render loop starts -- and the better answer
+#              there may be restructuring around emscripten_set_main_loop
+#              rather than Asyncify at all.
+#
+# Both are one line each when the time comes:
+#   add_compile_options(-pthread); add_link_options(-pthread)
+#   add_link_options("SHELL:-s ASYNCIFY=1")
+# ------------------------------------------------------------------------------
 
 # pthreads on the web need SharedArrayBuffer, which needs these response
 # headers on the page serving the build:

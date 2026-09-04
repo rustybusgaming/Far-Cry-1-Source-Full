@@ -60,6 +60,22 @@ System released cleanly.
 "System interface created", not merely that it exits 0 — the engine will happily
 continue after a subsystem drops out, so exit status alone would not notice.
 
+**And it runs in WebAssembly.** The same target builds with `emcmake` and runs
+under Node (and in a browser), producing a byte-for-byte identical boot log
+apart from pak paths and the hostname:
+
+```
+$ node build-wasm/Headless/Headless.js
+...
+Initializing Script Bindings
+
+System interface created.
+System released cleanly.
+```
+
+All four tests pass under wasm as well — CMake runs them through Node
+automatically. `Headless.wasm` is 9.2 MB against the native binary's 11.9 MB.
+
 `XRenderNULL` is the one that matters strategically. It is Crytek's own null
 renderer — 11 sources, ~2.4k lines, shipped for the dedicated server — and it
 implements the full `IRenderer` interface while drawing nothing. It is what
@@ -124,13 +140,17 @@ tools/triage.py --show "windows.h missing"   # real diagnostics for one category
 tools/triage.py --json out.json
 ```
 
-The wasm target is wired but not yet the working target — see
-*Why native clang first* below.
+WebAssembly:
 
 ```bash
 source /path/to/emsdk/emsdk_env.sh
 emcmake cmake -S . -B build-wasm -G Ninja
+cmake --build build-wasm
+node build-wasm/Headless/Headless.js
+cd build-wasm && ctest          # runs the same four tests through Node
 ```
+
+Built and tested against Emscripten 6.0.9.
 
 ---
 
@@ -487,7 +507,7 @@ without any shader work. The remaining pieces are known:
 
 ### Milestone 4 — the rasteriser
 
-`XRenderOGL` is 71k lines and the only complete GL backend, but it is OpenGL
+`XRenderOGL` is 45,733 lines and the only complete GL backend, but it is OpenGL
 1.x: 74 `glBegin` immediate-mode sites, 44 references to
 `GL_NV_register_combiners`, WGL context creation, and NVIDIA Cg shaders whose
 `cgGL.lib` is a binary blob with no source. WebGL2 (GLES 3.0) supports none of
@@ -593,6 +613,394 @@ anyway, with an empty export table, and the difference is load-bearing: an
 engine, whereas a *registered* one with no entry point takes the tolerant path
 `InitAISystem()` already has, logs, and continues. That is why the boot log
 above has an AI error in it and still finishes.
+
+### Getting to wasm
+
+Doing native clang first paid off exactly as intended: of 547 translation
+units, **only 14 failed to compile for wasm**, and the whole port took one
+sitting. The failures fell into two groups.
+
+**wasm32 is a 32-bit target, and the tree only knew two shapes.** The port had
+been defining `LINUX64` for wasm, which is wrong in a way that would have caused
+silent corruption rather than a build failure: `Linux64Specific.h` types
+`DWORD_PTR` as `uint64` while `LONG_PTR` stays `long`, so on wasm32 the two
+disagree with each other and with the 4-byte pointers they are meant to hold.
+Switching to `LINUX32` fixed that — but `LINUX32` also implied `_CPU_X86`, and
+wasm is 32-bit *without* being x86, so that had to be separated too.
+
+That change then exposed a pattern repeated in four places: guards written as
+`#if defined(LINUX64)` that actually mean **"`intptr_t` is a distinct type from
+`int`"**. The two conditions coincide on x86 (on x86-32 `intptr_t` *is* `int`,
+so the extra overload would collide) but come apart on wasm32, where pointers
+are four bytes yet `intptr_t` is `long` — same width as `int`, different type.
+Each site needed the overload the 64-bit guard was withholding:
+
+| Site | Symptom |
+|---|---|
+| `IScriptSystem.h` `GetParam(int, INT_PTR&)` | no viable overload for `CryEngineDecalInfo::nPartID` |
+| `Cry_Math.h` `iszero(intptr_t)` | ambiguous in CryPhysics' branchless pointer arithmetic |
+| `smartptr.h`, `LinuxSpecific.h` `CHandle` | see below |
+
+The `GetParam` guard was three separate copies of the same `#if` that had to
+agree — declaration in the interface, declaration in the implementation,
+definition — and they didn't. It is now one named macro,
+`CRY_SCRIPT_HAS_INT_PTR_PARAM`.
+
+**`NULL` is `0L` here.** Emscripten's headers define `NULL` as `0L` rather than
+as `__null`. That makes it a `long`, which converts equally badly to `int` and
+to a pointer, so every `smartPtr != NULL` and `handle = NULL` in the engine
+became ambiguous. `_smart_ptr` and `CHandle` gained `long` overloads. (The
+existing `typeof(__null)` overloads could not be reused: `typeof(__null)` is
+`int` on wasm32, which is exactly `CHandle<int,-1>`'s handle type.)
+
+**glibc-isms and one kernel header.** `_finite` was `#define`d to `__finite`, a
+glibc *internal* symbol that musl does not have — `isfinite` is the C99 spelling
+and works everywhere. `MTSafeAllocator` called `std::_Construct` and
+`std::_Destroy`, which are libstdc++ internals with no libc++ equivalent; they
+are placement new and an explicit destructor call, now written as such. And in
+six files `<io.h>` had been "translated" to `<sys/io.h>` — which is not the
+POSIX counterpart of Windows' low-level file header but the **x86 port-I/O**
+header declaring `inb`/`outb`. Nothing used those; the right header is
+`<unistd.h>`.
+
+Two more worth naming:
+
+- `std::map`'s allocator must have `value_type` `pair<const Key, T>`.
+  `CryPak.h` declared `CMTSafeAllocator<pair<string, unsigned>>` — libstdc++
+  rebinds internally and never notices, libc++ static-asserts. It only ever
+  compiled by luck.
+- `PAGESIZE` is a POSIX macro, and Emscripten defines it (as 65536), turning
+  `PageBucketAllocator`'s `enum { PAGESIZE = 4096 }` into `enum { 65536 = 4096 }`.
+
+**Two latent bugs a newer compiler found.** `Cry_Matrix.h` called
+`SetMatFromVectors34()` and `SetRotationZ34()`; neither exists — the members are
+`SetMatFromVectors` and `SetRotationZ`. Both sat in never-instantiated templates,
+and clang 18 does not diagnose a member call on the current instantiation at
+definition time. Clang 24 does.
+
+**The ASE SDK was excluded by accident.** `CryNetwork/Server.cpp` guards the
+All-Seeing Eye server-query calls with
+`#if !defined(WIN64) && !defined(LINUX64) && !defined(NOT_USE_ASE_SDK)`, so the
+native build skipped them only because it happened to define `LINUX64`. wasm is
+`LINUX32`, so three `ASEQuery_*` symbols came up undefined. The exclusion is now
+stated as `NOT_USE_ASE_SDK` — the mechanism `ProjectDefines.h` documents — for
+the reason it is actually true: there is no source for that library on any
+platform.
+
+**Link settings.** `cmake/toolchains/Emscripten.cmake` had been written
+speculatively in Milestone 1 and was never actually included by anything. It is
+now wired in and calibrated against a real build: C++ exceptions are **on**
+(Emscripten disables catching by default, and CryPak reports a missing `.pak` by
+throwing — with catching off the first absent pak kills startup instead of
+logging), while `-pthread` and `ASYNCIFY` are **off**, because the headless
+target uses neither and both are expensive. `wasm-ld` also needs no
+`--start-group`: it resolves the whole program's symbol table at once instead of
+in one left-to-right pass, so the circular module dependencies that force a
+link group on GNU ld are a non-issue there.
+
+---
+
+## The renderer
+
+### What actually stands in the way
+
+`XRenderOGL` is **45,733 lines** (not the 71k quoted in an earlier version of
+this document — that was wrong). Counting call sites in its `.cpp` files, with
+the declaration table excluded:
+
+| Feature | Call sites | Status in WebGL2 |
+|---|---:|---|
+| `glVertex*` / `glBegin` immediate mode | 595 / 69 | removed |
+| Fixed-function matrix stack | 206 | removed |
+| `wgl*` context creation | 205 | Windows-only |
+| `glTexEnv*` fixed-function texture env | 90 | removed |
+| NV register combiners | 85 | removed |
+| `glDrawPixels` / `glRasterPos` / `glBitmap` | 78 | removed |
+| Client-side vertex arrays | 70 | removed (VBO + attribs only) |
+| `GL_QUADS` / `GL_POLYGON` | 54 | removed |
+| ARB/NV assembly programs | 22 | removed |
+| ATI fragment shader | 12 | removed |
+
+Essentially every drawing path uses something WebGL2 does not have. This is not
+a port; the backend has to be rewritten. What *is* reusable is
+`RenderDll/Common` — shader parsing, texture management, render elements, leaf
+buffers — which is backend-independent source each backend compiles with its
+own defines, exactly as `XRenderNULL` does.
+
+### How the new backend is being built
+
+`IRenderer` has 250 pure virtuals; `CRenderer` in `Common` implements most of
+them; a backend fills in about a hundred. `XRenderNULL` is a complete working
+implementation of every one in ~2,000 lines that draws nothing.
+
+So `CGLESRenderer` **derives from `CNULLRenderer`** and overrides what it has
+implemented for real. Three properties make this worth doing over stubbing a
+fresh class:
+
+- The unimplemented tail is not stubs I wrote — it is Crytek's own draw-nothing
+  implementation, which is the correct behaviour for an unfinished entry point.
+- Progress cannot be faked: what is real is what `CGLESRenderer` overrides, and
+  everything else is visibly inherited. "How far along is the renderer" has an
+  exact answer at any moment.
+- The delta is small enough to read: the override list in `GLESRenderer.h`
+  *is* the scope of the backend so far, and nothing else is claimed.
+
+An earlier version of this section said the build **enforced** the split, by
+leaving `NULL_System.cpp` out of the target so its thirteen methods would have
+no definition and the link would fail until the GLES backend supplied them.
+That does not work, and the reason is worth recording: `CNULLRenderer`'s vtable
+is emitted in `NULL_Renderer.cpp` — the TU defining its key function — and a
+vtable needs *every* one of the class's virtuals defined, whether or not a
+derived class overrides them. Leaving the file out breaks the base class, not
+just the parts being replaced. So it is compiled, with `CRY_GLES_BACKEND`
+removing only its module-level tail (the null backend's engine-interface
+globals and its `PackageRenderConstructor`, which the GLES backend must own
+instead).
+
+It is a scaffold with a deliberate demolition order. As each subsystem is
+written against GLES its methods move from inherited to overridden, and when
+the last one moves, the dependency on `XRenderNULL` drops out of the CMake
+target.
+
+### What works today
+
+A live WebGL2 context created by the engine's own renderer, with viewport,
+buffer clears and frame begin/present. Verified in headless Chromium:
+
+```
+[gles] WebGL2 context on '#canvas', 320x240
+[gles]   renderer : WebKit WebGL
+[gles]   version  : OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium))
+[gles]   max tex 8192, cube 16384, units 32, attribs 16, MRT 6, samples 4
+[gles]   anisotropic yes, S3TC yes
+info: centre pixel = 64,128,191,255
+```
+
+That last line is the point: the engine cleared to 0.25/0.50/0.75 and the pixel
+read back is exactly 64/128/191. Nothing draws geometry yet.
+
+**S3TC is available**, which matters more than it looks — Far Cry's textures are
+DXT1/3/5, so they can be uploaded compressed instead of being decompressed on
+the CPU into a 32-bit heap.
+
+`tests/web/run_browser_tests.py` serves the build over HTTP (wasm cannot be
+fetched from `file://`) and drives headless Chromium through Playwright. It
+links `GLESContext.cpp` itself rather than a copy, so it covers the code that
+ships; verified to fail when one channel of the clear colour is changed.
+
+## The browser host
+
+`Web/WebMain.cpp` runs the whole engine in a page, on the WebGL2 backend:
+
+```
+Renderer initialization
+[gles] WebGL2 context on '#canvas', 800x600
+XRenderGLES: WebKit WebGL / OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium))
+Init Shaders ... Construct Shader '<Default>'... ok
+Input initialization
+Input: browser backend (no DirectInput)
+Keyboard initialized (browser)      <- WebInput, end to end
+Mouse initialized (browser)
+Entity system / Animation / 3D Engine / Script Bindings
+
+System interface created. Renderer: present
+```
+
+### Why the loop had to be inverted
+
+A page has one thread that also services layout, input and compositing, and —
+the part that catches people out — **the drawing buffer is presented when the
+task that drew it yields**. There is no `SwapBuffers` to call. A renderer can
+issue a perfect frame and the canvas stays blank for as long as the loop holds
+the thread. The engine's `while(!quit)` never yields, so nothing would ever
+appear.
+
+So one frame becomes one callback, via `emscripten_set_main_loop`, which
+compiles to `requestAnimationFrame` — frames are paced by the display and pause
+in a background tab, both of which the engine's delta-based timing is fine
+with. The alternative, Asyncify, rewrites the whole module so a blocking loop
+can yield mid-call; it costs size and speed everywhere to avoid restructuring
+one function, and nothing here wants to block.
+
+`web_host_frames` asserts the engine renders 30 frames in Chromium. That is the
+thing worth asserting about a browser frame loop: not that it *ran*, but that
+it kept **yielding** — a loop that never returned to the event loop would hang
+the test rather than count.
+
+### Two engine changes this needed
+
+- `CSystem::OpenRenderLibrary` forced the renderer type to `R_NULL_RENDERER`
+  on `LINUX`, unconditionally. That was correct for Crytek: their Linux target
+  was a dedicated server with no graphics backend at all. The web build has
+  one, so under Emscripten the requested type now stands. Native Linux keeps
+  the original behaviour, because the reason for it is still true there.
+- `r_Driver` defaulted to `"Direct3D9"`, and the cvar is created *inside*
+  `InitRenderer` — after any config file is read — so nothing could override a
+  wrong default before it was used. On wasm it defaults to `"OpenGL"`, the one
+  backend that exists there.
+
+### Missing assets are no longer fatal
+
+`CSystem::InitFont` refused to initialise without `languages/fonts/default.xml`,
+diagnosing it as "you're probably running the executable from the wrong working
+folder". That is the right diagnosis for a desktop install and meaningless in a
+browser: there is no working folder and no local install, the engine starts
+against an empty filesystem, and game data arrives over the network afterwards.
+Under `_CRY_WEBPORT` a missing font is now a warning. The engine already takes
+this view of missing `.pak` archives, and a font is no more fundamental than
+the archives that contain one. The consequence is real and logged: no font
+means no console or HUD text.
+
+## The engine draws
+
+`IRenderer::DrawDynVB` now works. That is the engine's generic dynamic-geometry
+entry point — CryFont builds text through it, six vertices per glyph, and
+CryGame's script renderer uses it for debug geometry — so implementing it lights
+up the real path rather than a demo one:
+
+```
+XRenderGLES: dynamic-vertex program built
+[web] centre pixel 32,128,224  corner 0,0,0
+```
+
+The host draws a quad over the middle of the screen in `0x20,0x80,0xE0` and
+samples the framebuffer back through `IRenderer::ReadFrameBuffer`. Centre
+matches exactly; the corner is the clear. `web_host_frames` asserts both, and
+was verified to fail on a wrong channel.
+
+Four things had to be right for that pixel to be right, which is why it is worth
+asserting rather than eyeballing:
+
+- **A GLSL ES program exists at all.** GLES has no fixed-function pipeline.
+  Where the original backend could enable texturing and call `glBegin`, nothing
+  can be drawn here without a compiled program.
+- **The colour swizzle.** The engine packs `UCol` as **B,G,R,A** when `gbRgb` is
+  false, which every backend in this tree sets — it is the Direct3D byte order,
+  and the GL backends asked the driver for `GL_BGRA` to compensate. GLES 3.0 has
+  no BGRA vertex format, so the bytes are read in their natural order and
+  reordered in the shader. Free there; a per-vertex CPU pass otherwise.
+- **Quads.** GLES has no `GL_QUADS` and the engine uses `R_PRIMV_QUADS` freely
+  (2D images, sprites). Each quad is expanded to two triangles at draw time,
+  which keeps it a backend concern instead of a change every caller has to make.
+- **The vertical flip.** Screen space here has y increasing *downward* — the
+  engine positions 2D from the top-left, as Windows does — while GL clip space
+  has y up. `Set2DMode`'s ortho passes `top=0, bottom=h` to invert it. Get this
+  wrong and text renders upside down.
+
+Two smaller notes. The dynamic pool is CPU memory uploaded at draw time rather
+than a mapped buffer, because **WebGL has no `glMapBufferRange`** — there is no
+pointer into GPU memory to hand across the JavaScript boundary. And the vertex
+layout is recorded once in a VAO rather than re-specified per draw, since each
+`glVertexAttribPointer` is a separate crossing into JavaScript.
+
+`ReadFrameBuffer` is implemented for real (it is what screenshots use). It reads
+`GL_RGBA`/`GL_UNSIGNED_BYTE` — the one combination GLES 3.0 guarantees — and
+narrows to RGB itself rather than handing `GL_RGB` to a driver that is permitted
+to reject it. Nothing in the frame path calls it: `glReadPixels` is a hard
+synchronisation point, and on the web the answer also has to cross back out of
+the GPU process.
+
+## Textures
+
+`DownLoadToVideoMemory`, `UpdateTextureInVideoMemory`, `SetTexture` and
+`RemoveTexture` now work, so the engine can put pixels on the GPU and sample
+them:
+
+```
+[web] proof texture id 1
+[web] untextured 32,128,224  textured 192,64,16  corner 0,0,0
+```
+
+The textured quad's texel is uploaded as `eTF_8888` — the engine's BGRA — as
+`{0x10,0x40,0xC0}`, and comes back as `192,64,16`. All three samples are
+asserted, and the negative case was checked against `16,64,192`, which is
+exactly the failure a missed swizzle would produce.
+
+Three things worth recording:
+
+- **BGRA has to be reordered on the CPU.** `eTF_8888` is, in the engine's own
+  header, "usually BGRA". GLES 3.0 can express that with
+  `GL_TEXTURE_SWIZZLE_R`/`_B`, but **WebGL2 does not expose texture swizzle**,
+  so the reorder happens at upload. Once per texture rather than per frame, and
+  skipped entirely for `eTF_RGBA` — which is why that format exists as a
+  separate entry, its own comment noting it was "used only in
+  `CGLRenderer::DownLoadToVideoMemory`".
+- **DXT goes straight through.** Compressed data must *not* be touched;
+  DXT1/3/5 upload via `glCompressedTexImage2D`. Since Chromium reports
+  `WEBGL_compressed_texture_s3tc` available and Far Cry's textures are almost
+  entirely DXT, the common case is a direct upload with no CPU work at all.
+- **The min filter is a trap.** A texture with no mip chain whose minification
+  filter asks for one is *incomplete* and samples as solid black, with no error
+  reported anywhere. The upload path sets `GL_LINEAR` unless it actually
+  generated mipmaps. `GL_UNPACK_ALIGNMENT` is set to 1 for the same class of
+  reason: the default of 4 silently skews any upload whose row length is not a
+  multiple of four.
+
+Mipmaps are generated rather than read: `nummipmap > 1` means the caller wants a
+chain, not that it supplied one. Real DXT assets carry their own, which this
+path does not read yet.
+
+## Static vertex buffers
+
+`CreateBuffer`, `UpdateBuffer`, `CreateIndexBuffer`, `DrawBuffer` and
+`ReleaseBuffer` now work — the path world geometry takes, as distinct from the
+dynamic one:
+
+```
+[web] static buffer created
+[web] untextured 32,128,224  textured 192,64,16  static 96,176,48  corner 0,0,0
+```
+
+All four samples are asserted, each in a different colour so no two can be
+confused, and the static one was verified to fail when its expected value is
+changed.
+
+### Seventeen formats, one binder
+
+The engine has seventeen vertex formats. `XRenderOGL` handles them with a switch
+per entry point — each case naming a struct and calling the matching
+`glVertexPointer`/`glColorPointer`/`glTexCoordPointer` trio — roughly 200 lines
+repeated in several places, and a place to forget a format.
+
+It doesn't need to be written that way, because **the engine already ships the
+description**. `CryCommon/VertexFormats.h` has `m_VertexSize[]` giving every
+format's stride and `gBufInfoTable[]` giving the byte offset of the colour,
+texture coordinate, secondary colour and normal within it. Those two tables are
+enough to bind any format generically, so this backend has one binder instead of
+seventeen cases, and a format added to the engine works here without a change.
+
+The tables use `0` to mean "this format has no such attribute" — position is
+always at offset 0, so a zero colour offset cannot be a real one. That is the
+same convention `CLeafBuffer` reads them with.
+
+Two details that would otherwise be silent:
+
+- **A disabled vertex attribute keeps whatever constant was last set for it.**
+  Formats without a colour get an explicit white rather than an assumption.
+- **`TRP3F` positions are pre-transformed** — `x,y,z,rhw`, already in screen
+  space. Running them through a projection would put them somewhere arbitrary.
+  The engine only uses that format in 2D, so `DrawBuffer` says so out loud if it
+  ever sees one outside 2D mode rather than drawing it wrong.
+
+A VAO is cached per GL buffer, since a static mesh's layout never changes and
+each `glVertexAttribPointer` is a separate crossing into JavaScript.
+
+`DrawBuffer` does *not* expand `R_PRIMV_QUADS` the way the dynamic path does:
+by then the indices are already in a GL buffer, and rewriting them would mean
+reading them back. It logs once and skips.
+
+The engine's indices are 16-bit throughout, capping a buffer at 65536 vertices.
+That limit belongs to the data, not to this backend — WebGL2 supports 32-bit
+indices, so it is the meshes that would have to change.
+
+### Next
+
+The shader translation: turning Crytek's shader scripts, register combiners and
+assembly programs into GLSL ES. That remains the largest single piece of work in
+the renderer, and nothing before it draws a world — everything drawn so far goes
+through one hand-written program.
+
+---
 
 ### Known hard blockers
 

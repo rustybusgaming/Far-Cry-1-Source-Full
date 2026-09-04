@@ -108,7 +108,6 @@ if(CRY_HEADER_PARSE_GATE)
     IXml.h
     LMCompStructures.h
     LeafBuffer.h
-    Linux64Specific.h
     LinuxSpecific.h
     MakMatInfoFromMAT_ENTITY.h
     MeshIdx.h
@@ -145,6 +144,23 @@ if(CRY_HEADER_PARSE_GATE)
     primitives.h
     smartptr.h
     )
+    # Linux32Specific.h and Linux64Specific.h are not both in the list above.
+    #
+    # They are not two headers that should each stand on their own; they are the
+    # two halves of the platform's word-size selection, and platform.h includes
+    # exactly one of them based on LINUX32 / LINUX64. Each defines the same
+    # names -- INT_PTR, DWORD_PTR, SIZE_T -- at a different width, so compiling
+    # the one the target did NOT select on top of the one it did is a guaranteed
+    # typedef conflict. Gating it would assert self-containment in a
+    # configuration that never occurs.
+    #
+    # The one the target does use is gated, like every other header.
+    if("LINUX32" IN_LIST CRY_PLATFORM_DEFINES)
+        list(APPEND CRYCOMMON_GATED_HEADERS Linux32Specific.h)
+    else()
+        list(APPEND CRYCOMMON_GATED_HEADERS Linux64Specific.h)
+    endif()
+
     cry_add_header_gate(CryCommonHeaderGate
         HEADERS ${CRYCOMMON_GATED_HEADERS}
         INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}")

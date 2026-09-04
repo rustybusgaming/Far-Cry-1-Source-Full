@@ -30,13 +30,7 @@ add_test(NAME webinput COMMAND test_webinput)
 add_executable(test_static_modules test_static_modules.cpp)
 cry_apply_common_settings(test_static_modules)
 target_include_directories(test_static_modules PRIVATE "${PROJECT_SOURCE_DIR}/CryCommon")
-if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
-    target_link_libraries(test_static_modules PRIVATE
-        "$<LINK_GROUP:RESCAN,${CRY_HEADLESS_MODULES}>")
-else()
-    target_link_libraries(test_static_modules PRIVATE
-        -Wl,--start-group ${CRY_HEADLESS_MODULES} -Wl,--end-group)
-endif()
+cry_link_module_group(test_static_modules ${CRY_HEADLESS_MODULES})
 target_link_libraries(test_static_modules PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
 
 add_test(NAME static_modules COMMAND test_static_modules)
@@ -54,3 +48,64 @@ set_tests_properties(headless_boot PROPERTIES
     PASS_REGULAR_EXPRESSION "System interface created"
     FAIL_REGULAR_EXPRESSION "FAILED: CreateSystemInterface"
 )
+
+# ------------------------------------------------------------------------------
+# Browser tests.
+#
+# These need a real browser and so are built only for wasm. They are driven by
+# tests/web/run_browser_tests.py, which serves the build over HTTP -- wasm
+# cannot be loaded from a file:// URL -- and drives headless Chromium through
+# Playwright.
+# ------------------------------------------------------------------------------
+if(EMSCRIPTEN)
+    # The WebGL2 context the renderer creates. Links GLESContext.cpp itself
+    # rather than a copy, so this covers the code that actually ships.
+    add_executable(test_glescontext
+        web/test_glescontext.cpp
+        "${PROJECT_SOURCE_DIR}/RenderDll/XRenderGLES/GLESContext.cpp")
+    target_include_directories(test_glescontext PRIVATE
+        "${PROJECT_SOURCE_DIR}/RenderDll/XRenderGLES")
+    # A canvas is required, so this is an HTML target rather than bare JS.
+    set_target_properties(test_glescontext PROPERTIES SUFFIX ".html")
+    target_link_options(test_glescontext PRIVATE
+        "SHELL:-s MIN_WEBGL_VERSION=2"
+        "SHELL:-s MAX_WEBGL_VERSION=2"
+        "SHELL:-s OFFSCREENCANVAS_SUPPORT=0")
+
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME glescontext_browser
+                 COMMAND ${Python3_EXECUTABLE}
+                         "${CMAKE_CURRENT_SOURCE_DIR}/web/run_browser_tests.py"
+                         "$<TARGET_FILE:test_glescontext>")
+        set_tests_properties(glescontext_browser PROPERTIES TIMEOUT 300)
+    endif()
+
+    # The browser host: does the engine's frame loop actually run and keep
+    # yielding to the page. See run_browser_tests.py --frames for why that is
+    # the thing worth asserting.
+    if(Python3_Interpreter_FOUND AND TARGET CryWeb)
+        add_test(NAME web_host_frames
+                 COMMAND ${Python3_EXECUTABLE}
+                         "${CMAKE_CURRENT_SOURCE_DIR}/web/run_browser_tests.py"
+                         "$<TARGET_FILE:CryWeb>" --frames 30
+                         # The quad Web/WebMain.cpp draws through
+                         # IRenderer::DrawDynVB, sampled back through
+                         # IRenderer::ReadFrameBuffer. The centre must be the
+                         # quad's colour and the corner the clear, which
+                         # together show the geometry landed in the right place
+                         # and the BGRA-to-RGBA swizzle is right.
+                         --expect-centre 32,128,224
+                         --expect-corner 0,0,0
+                         # The textured quad. Its texel is uploaded as
+                         # eTF_8888 -- the engine's BGRA -- so this covers the
+                         # CPU reorder in GLESTexture.cpp as well as sampling.
+                         --expect-textured 192,64,16
+                         # The static-buffer quad: CreateBuffer, UpdateBuffer,
+                         # CreateIndexBuffer, DrawBuffer -- the route world
+                         # geometry takes, with attributes bound from the
+                         # engine's own vertex-format tables.
+                         --expect-static 96,176,48)
+        set_tests_properties(web_host_frames PROPERTIES TIMEOUT 300)
+    endif()
+endif()

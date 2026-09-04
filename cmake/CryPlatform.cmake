@@ -25,11 +25,27 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ------------------------------------------------------------------------------
 if(EMSCRIPTEN)
     set(CRY_PLATFORM "wasm32" CACHE INTERNAL "")
-    # wasm32 is a 32-bit target, but it is emphatically not x86: LINUX32 in
-    # platform.h pulls in Linux32Specific.h and defines _CPU_X86, which gates
-    # inline assembly. We take the 64-bit header (pointer-size agnostic, no
-    # _CPU_X86) and correct the word size separately.
-    set(CRY_PLATFORM_DEFINES LINUX LINUX64 _LINUX CRY_WASM)
+    # wasm32 is a 32-bit target, so it takes the LINUX32 model, not LINUX64.
+    #
+    # This matters beyond tidiness. Linux64Specific.h types DWORD_PTR as uint64
+    # while LONG_PTR stays "long" -- fine on x86-64 where both are 8 bytes, but
+    # on wasm32 pointers are 4 bytes and the two disagree with each other and
+    # with the pointers they are supposed to hold. Linux32Specific.h is
+    # internally consistent for a 32-bit target: intptr_t/uintptr_t as
+    # int/unsigned int and DWORD_PTR as DWORD.
+    #
+    # It also fixes CHandle. LinuxSpecific.h adds a CHandle(typeof(__null))
+    # constructor under LINUX64 so NULL can be passed as an invalid handle;
+    # that only works where typeof(__null) differs from the handle type. On
+    # x86-64 it is "long" and does; on wasm32 it is "int", which is exactly
+    # HandleType for CHandle<int,-1>, so the overload collided with
+    # CHandle(HandleType) and the header would not compile.
+    set(CRY_PLATFORM_DEFINES LINUX LINUX32 _LINUX CRY_WASM)
+
+    # The engine-specific wasm settings: exceptions, heap sizing, WebGL level.
+    # Kept in its own file so an SDK upgrade cannot clobber them, and included
+    # here rather than from the top level so it cannot be forgotten.
+    include("${CMAKE_CURRENT_LIST_DIR}/toolchains/Emscripten.cmake")
 else()
     set(CRY_PLATFORM "native-${CMAKE_SYSTEM_PROCESSOR}" CACHE INTERNAL "")
     set(CRY_PLATFORM_DEFINES LINUX LINUX64 _LINUX)
@@ -54,6 +70,23 @@ set(CRY_COMMON_DEFINES
     # were shut down years ago. ProjectDefines.h documents NOT_USE_UBICOM_SDK
     # as the supported way to build without it; this is precisely that case.
     NOT_USE_UBICOM_SDK
+
+    # The ASE (All-Seeing Eye) server-query SDK: ASEQuerySDK.lib, a Windows
+    # binary with no source, used to advertise a dedicated server to the ASE
+    # server browser. ProjectDefines.h documents NOT_USE_ASE_SDK as the
+    # supported way to build without it.
+    #
+    # The native build never needed this stated, but only by accident: the
+    # guards in CryNetwork/Server.cpp read
+    #
+    #     #if !defined(WIN64) && !defined(LINUX64) && !defined(NOT_USE_ASE_SDK)
+    #
+    # so defining LINUX64 happened to exclude it. wasm is LINUX32, which does
+    # not, and the three ASEQuery_* symbols came up undefined at the link. The
+    # exclusion is now stated for the reason it is actually true -- there is no
+    # source for this library on any platform -- rather than as a side effect
+    # of the word size.
+    NOT_USE_ASE_SDK
 
     # CryCommon/crysound.h declares "#define CS_VERSION 3.61f" and types its
     # file callbacks as unsigned int. CrySoundSystem selects its callback

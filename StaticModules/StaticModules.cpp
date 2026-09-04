@@ -112,6 +112,14 @@ static const SCryStaticModule g_modules[] =
 	{ "crymovie",			g_movieExports			},
 	{ "cryaisystem",		g_aiSystemExports		},
 	{ "xrendernull",		g_nullRendererExports	},
+
+	// The renderer backends share one entry-point name, PackageRenderConstructor,
+	// and exactly one backend is ever in the link -- so both names resolve to
+	// whichever was built. That is what lets "r_Driver = OpenGL" select the
+	// WebGL2 backend without SystemInit.cpp knowing it exists: it asks for
+	// "XRenderOGL.dll" by name, and gets the GLES renderer if that is what was
+	// linked.
+	{ "xrenderogl",			g_nullRendererExports	},
 };
 
 static const int g_nModules = (int)(sizeof(g_modules) / sizeof(g_modules[0]));

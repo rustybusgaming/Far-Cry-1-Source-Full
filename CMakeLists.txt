@@ -85,6 +85,10 @@ add_subdirectory(StaticModules)
 # set needs a linker group.
 add_subdirectory(Headless)
 
+# The browser host: the same engine driven from the page's event loop, with
+# the WebGL2 backend in place of the null one. wasm only.
+add_subdirectory(Web)
+
 # Tests for the port's own code (WinBase.h and friends).
 enable_testing()
 add_subdirectory(tests)

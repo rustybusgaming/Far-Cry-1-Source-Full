@@ -800,9 +800,23 @@ void CSystem::CreateRendererVars()
 		"Usage: r_ColorBits [32/24/16/8]");
 	m_rDepthBits = GetIConsole()->CreateVariable("r_DepthBits", "32", VF_DUMPTODISK);
 	m_rStencilBits = GetIConsole()->CreateVariable("r_StencilBits", "8", VF_DUMPTODISK);	
+	// [webport] The default names a backend that exists on the target.
+	//
+	// "Direct3D9" is not merely unavailable in a browser, it is unbuildable
+	// there, and this cvar is created inside InitRenderer -- after any config
+	// file has been read -- so nothing gets a chance to override a wrong
+	// default before it is used. On wasm there is exactly one backend,
+	// XRenderGLES, and it answers to "OpenGL".
+#if defined(__EMSCRIPTEN__)
+	m_rDriver= GetIConsole()->CreateVariable("r_Driver", "OpenGL", VF_DUMPTODISK,
+		"Sets the renderer driver. On the web build the only backend is the\n"
+		"WebGL2 one, selected by 'OpenGL'.\n"
+		"Usage: r_Driver OpenGL");
+#else
 	m_rDriver= GetIConsole()->CreateVariable("r_Driver", "Direct3D9", VF_DUMPTODISK,
 		"Sets the renderer driver. Default is 'Direct3D9'.\n"
 		"Usage: r_Driver Direct3D9");
+#endif
 #ifdef _DEBUG
 	m_rFullscreen = GetIConsole()->CreateVariable("r_Fullscreen", "0", VF_DUMPTODISK,
 		"Toggles fullscreen mode. Default is 1 (fullscreen).\n"

@@ -372,6 +372,26 @@ inline int64 iszero(intptr_t x)
 }
 #endif
 
+#if defined(__EMSCRIPTEN__)
+// [webport] wasm32 needs this overload too, for the same reason LINUX64 does
+// and not the one the guard above suggests.
+//
+// intptr_t here is long: four bytes, but a distinct type from int, from float,
+// from double and from long long. So an iszero((intptr_t)p) -- which CryPhysics
+// does throughout its branchless pointer arithmetic -- matches none of the
+// overloads exactly and is ambiguous between three of them.
+//
+// This is written without __int64 because Linux32Specific.h does not define
+// that name, and it keeps the 8-byte branch so a future wasm64 target stays
+// correct rather than silently truncating pointers to 32 bits.
+inline int64 iszero(intptr_t x)
+{
+	return (sizeof(x) == 8)
+	     ? -((int64)x >> 63 ^ ((int64)x - 1) >> 63)
+	     : iszero((int)x);
+}
+#endif
+
 template<class F> int inrange(F x, F end1, F end2) {
 	return isneg(fabs_tpl(end1+end2-x*(F)2) - fabs_tpl(end1-end2));
 }

@@ -57,7 +57,7 @@ int CFunctionHandler::GetParamCount()
 	return lua_gettop(m_pLS)-2;// -2 are "this" and "func ID"
 }
 
-#if defined(WIN64) || defined(LINUX64)
+#if CRY_SCRIPT_HAS_INT_PTR_PARAM	// [webport] see CryCommon/IScriptSystem.h
 bool CFunctionHandler::GetParam(int nIdx,INT_PTR &n)	//AMD Port
 {
 	int nRealIdx=nIdx+1;

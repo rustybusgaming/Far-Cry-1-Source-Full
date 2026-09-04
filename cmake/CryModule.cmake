@@ -74,3 +74,32 @@ function(cry_add_header_gate name)
     list(LENGTH ARG_HEADERS _n)
     message(STATUS "cry: header gate ${name} (${_n} headers)")
 endfunction()
+
+# ------------------------------------------------------------------------------
+# cry_link_module_group(<target> <libs...>)
+#
+# Links the engine's mutually recursive static libraries.
+#
+# The modules reference each other in cycles -- CrySystem calls into
+# Cry3DEngine, which calls back into CrySystem -- which was free when each was
+# its own DLL and the dynamic loader resolved everything at runtime. As static
+# archives it is not free: GNU ld walks the link line once, left to right, and
+# will not revisit an archive it has already passed. No ordering satisfies the
+# cycles, so the whole set is wrapped in --start-group/--end-group, which tells
+# ld to keep re-scanning until nothing new resolves.
+#
+# wasm-ld needs none of that and does not implement it. It resolves the whole
+# program's symbol table at once rather than in one pass over the command line,
+# so archive order is irrelevant there and asking for RESCAN is an error.
+# ------------------------------------------------------------------------------
+function(cry_link_module_group target)
+    if(EMSCRIPTEN)
+        target_link_libraries(${target} PRIVATE ${ARGN})
+    elseif(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+        target_link_libraries(${target} PRIVATE "$<LINK_GROUP:RESCAN,${ARGN}>")
+    else()
+        # LINK_GROUP arrived in CMake 3.24. Older versions get the flags spelled out.
+        target_link_libraries(${target} PRIVATE
+            -Wl,--start-group ${ARGN} -Wl,--end-group)
+    endif()
+endfunction()

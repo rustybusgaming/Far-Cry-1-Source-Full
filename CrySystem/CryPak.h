@@ -422,7 +422,13 @@ public:
 
 	void OnMissingFile (const char* szPath);
 	// missing file -> count of missing files
-	typedef CMTSafeAllocator<std::pair<string, unsigned> > MissingFileMapAllocator;
+	// [webport] Was CMTSafeAllocator<std::pair<string, unsigned> >.
+	//
+	// A std::map's value_type is pair<const Key, T>, and the standard requires
+	// the allocator's value_type to match it exactly. libstdc++ rebinds the
+	// allocator internally and never notices the difference; libc++ static-asserts
+	// on it, so this only ever compiled by luck.
+	typedef CMTSafeAllocator<std::pair<const string, unsigned> > MissingFileMapAllocator;
 	typedef std::map<string, unsigned, std::less<string>, MissingFileMapAllocator > MissingFileMap;
 	MissingFileMap m_mapMissingFiles;
 };

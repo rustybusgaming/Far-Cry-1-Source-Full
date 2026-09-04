@@ -109,14 +109,19 @@ public:
 			Deallocate(_Ptr);
 		}
 
+		// [webport] std::_Construct and std::_Destroy are libstdc++ INTERNALS --
+		// reserved names in the implementation's namespace, never part of the
+		// standard -- and libc++, which is what Emscripten ships, has no such
+		// thing. Spelled out here as what those helpers do: placement new, and
+		// an explicit destructor call.
 		void construct(pointer _Ptr, const _Ty& _Val)
 		{	// construct object at _Ptr with value _Val
-			std::_Construct(_Ptr, _Val);
+			::new (static_cast<void*>(_Ptr)) _Ty(_Val);
 		}
 
 		void destroy(pointer _Ptr)
 		{	// destroy object at _Ptr
-			std::_Destroy(_Ptr);
+			_Ptr->~_Ty();
 		}
 
 		size_t max_size() const

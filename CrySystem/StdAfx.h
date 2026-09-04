@@ -43,7 +43,18 @@
 #include <fcntl.h>
 
 #if defined( LINUX )
-#	include <sys/io.h>
+// [webport] Was <sys/io.h>, which is not the POSIX counterpart of Windows'
+// <io.h> -- it is the x86 PORT I/O header, declaring inb/outb/ioperm for
+// talking to hardware ports from ring 0. Nothing in CrySystem uses any of
+// them; the name simply looked right.
+//
+// Windows' <io.h> declares the low-level file calls (_open, _read, _close,
+// _access), and on POSIX those live in <unistd.h>. That is what this include
+// was always reaching for.
+//
+// It also does not exist outside x86: <sys/io.h> is absent on wasm, which is
+// how the mistake surfaced.
+#	include <unistd.h>
 #else
 #	include <io.h>
 #endif
