@@ -119,15 +119,15 @@ void CNULLRenderer::ShutDown(bool bReInit)
 // engine-interface globals and its entry point -- rather than the behaviour of
 // CNULLRenderer.
 //
-// XRenderGLES compiles this file too, because CNULLRenderer's vtable is emitted
-// in NULL_Renderer.cpp and therefore needs every one of its virtuals defined,
-// including the ones above that CGLESRenderer overrides. What XRenderGLES must
-// NOT get is a second copy of the module globals and a second
-// PackageRenderConstructor: exactly one renderer backend is in any link, and it
-// has to be the GLES one there.
+// The XRenderGLES and XRenderWGPU targets compile this file too, because
+// CNULLRenderer's vtable is emitted in NULL_Renderer.cpp and therefore needs
+// every one of its virtuals defined, including the ones above that a derived
+// backend overrides. What those targets must NOT get is a second copy of the
+// module globals and a second PackageRenderConstructor: exactly one renderer
+// backend is in any link, and it has to be theirs.
 //
 // See RenderDll/XRenderGLES/GLESRenderer.h.
-#if !defined(CRY_GLES_BACKEND)
+#if !defined(CRY_BACKEND_OWNS_MODULE)
 
 ILog     *iLog;
 IConsole *iConsole;
@@ -198,4 +198,4 @@ void *gGet_glReadPixels()
   return NULL;
 }
 
-#endif // !CRY_GLES_BACKEND
+#endif // !CRY_BACKEND_OWNS_MODULE

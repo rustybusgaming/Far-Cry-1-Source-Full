@@ -37,7 +37,7 @@
 	unit defining its key function -- and a vtable needs every one of the
 	class's virtuals defined, whether or not a derived class overrides them.
 	Leaving the file out breaks the base class, not just the parts being
-	replaced. So NULL_System.cpp is compiled, with CRY_GLES_BACKEND removing
+	replaced. So NULL_System.cpp is compiled, with CRY_BACKEND_OWNS_MODULE removing
 	only its module-level tail: the engine-interface globals and the
 	PackageRenderConstructor, which this backend has to own instead.
 
