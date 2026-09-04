@@ -742,12 +742,20 @@ fresh class:
 - Progress cannot be faked: what is real is what `CGLESRenderer` overrides, and
   everything else is visibly inherited. "How far along is the renderer" has an
   exact answer at any moment.
-- **The build enforces the split.** `CryRenderGLES` compiles every
-  `XRenderNULL` source *except* `NULL_System.cpp`, which is where
-  `CNULLRenderer`'s system and context layer lives. Leaving it out means those
-  thirteen methods have no definition, so the link fails until the GLES backend
-  supplies them — and they are precisely the ones a real backend cannot
-  inherit: context creation, resolution, gamma, resource lifetime, shutdown.
+- The delta is small enough to read: the override list in `GLESRenderer.h`
+  *is* the scope of the backend so far, and nothing else is claimed.
+
+An earlier version of this section said the build **enforced** the split, by
+leaving `NULL_System.cpp` out of the target so its thirteen methods would have
+no definition and the link would fail until the GLES backend supplied them.
+That does not work, and the reason is worth recording: `CNULLRenderer`'s vtable
+is emitted in `NULL_Renderer.cpp` — the TU defining its key function — and a
+vtable needs *every* one of the class's virtuals defined, whether or not a
+derived class overrides them. Leaving the file out breaks the base class, not
+just the parts being replaced. So it is compiled, with `CRY_GLES_BACKEND`
+removing only its module-level tail (the null backend's engine-interface
+globals and its `PackageRenderConstructor`, which the GLES backend must own
+instead).
 
 It is a scaffold with a deliberate demolition order. As each subsystem is
 written against GLES its methods move from inherited to overridden, and when
@@ -780,13 +788,73 @@ fetched from `file://`) and drives headless Chromium through Playwright. It
 links `GLESContext.cpp` itself rather than a copy, so it covers the code that
 ships; verified to fail when one channel of the clear colour is changed.
 
+## The browser host
+
+`Web/WebMain.cpp` runs the whole engine in a page, on the WebGL2 backend:
+
+```
+Renderer initialization
+[gles] WebGL2 context on '#canvas', 800x600
+XRenderGLES: WebKit WebGL / OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium))
+Init Shaders ... Construct Shader '<Default>'... ok
+Input initialization
+Input: browser backend (no DirectInput)
+Keyboard initialized (browser)      <- WebInput, end to end
+Mouse initialized (browser)
+Entity system / Animation / 3D Engine / Script Bindings
+
+System interface created. Renderer: present
+```
+
+### Why the loop had to be inverted
+
+A page has one thread that also services layout, input and compositing, and —
+the part that catches people out — **the drawing buffer is presented when the
+task that drew it yields**. There is no `SwapBuffers` to call. A renderer can
+issue a perfect frame and the canvas stays blank for as long as the loop holds
+the thread. The engine's `while(!quit)` never yields, so nothing would ever
+appear.
+
+So one frame becomes one callback, via `emscripten_set_main_loop`, which
+compiles to `requestAnimationFrame` — frames are paced by the display and pause
+in a background tab, both of which the engine's delta-based timing is fine
+with. The alternative, Asyncify, rewrites the whole module so a blocking loop
+can yield mid-call; it costs size and speed everywhere to avoid restructuring
+one function, and nothing here wants to block.
+
+`web_host_frames` asserts the engine renders 30 frames in Chromium. That is the
+thing worth asserting about a browser frame loop: not that it *ran*, but that
+it kept **yielding** — a loop that never returned to the event loop would hang
+the test rather than count.
+
+### Two engine changes this needed
+
+- `CSystem::OpenRenderLibrary` forced the renderer type to `R_NULL_RENDERER`
+  on `LINUX`, unconditionally. That was correct for Crytek: their Linux target
+  was a dedicated server with no graphics backend at all. The web build has
+  one, so under Emscripten the requested type now stands. Native Linux keeps
+  the original behaviour, because the reason for it is still true there.
+- `r_Driver` defaulted to `"Direct3D9"`, and the cvar is created *inside*
+  `InitRenderer` — after any config file is read — so nothing could override a
+  wrong default before it was used. On wasm it defaults to `"OpenGL"`, the one
+  backend that exists there.
+
+### Missing assets are no longer fatal
+
+`CSystem::InitFont` refused to initialise without `languages/fonts/default.xml`,
+diagnosing it as "you're probably running the executable from the wrong working
+folder". That is the right diagnosis for a desktop install and meaningless in a
+browser: there is no working folder and no local install, the engine starts
+against an empty filesystem, and game data arrives over the network afterwards.
+Under `_CRY_WEBPORT` a missing font is now a warning. The engine already takes
+this view of missing `.pak` archives, and a font is no more fundamental than
+the archives that contain one. The consequence is real and logged: no font
+means no console or HUD text.
+
 ### Next
 
-The main loop. In a browser the drawing buffer is presented when the task that
-drew it yields to the event loop — there is no `SwapBuffers` to call. The
-engine's `while(!quit)` never yields, so nothing would ever appear. Headless
-sidesteps this by never entering that loop, which is exactly why it can be
-tested today. After that: vertex buffers, then the shading pipeline in GLSL ES.
+Vertex buffers, then the shading pipeline in GLSL ES. Nothing draws geometry
+yet — what reaches the canvas is the clear.
 
 ---
 

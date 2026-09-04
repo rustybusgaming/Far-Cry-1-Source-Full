@@ -80,4 +80,15 @@ if(EMSCRIPTEN)
                          "$<TARGET_FILE:test_glescontext>")
         set_tests_properties(glescontext_browser PROPERTIES TIMEOUT 300)
     endif()
+
+    # The browser host: does the engine's frame loop actually run and keep
+    # yielding to the page. See run_browser_tests.py --frames for why that is
+    # the thing worth asserting.
+    if(Python3_Interpreter_FOUND AND TARGET CryWeb)
+        add_test(NAME web_host_frames
+                 COMMAND ${Python3_EXECUTABLE}
+                         "${CMAKE_CURRENT_SOURCE_DIR}/web/run_browser_tests.py"
+                         "$<TARGET_FILE:CryWeb>" --frames 30)
+        set_tests_properties(web_host_frames PROPERTIES TIMEOUT 300)
+    endif()
 endif()

@@ -41,8 +41,24 @@ def serve(directory):
 
 def main():
     if len(sys.argv) < 2:
-        print("usage: run_browser_tests.py <page.html>", file=sys.stderr)
+        print("usage: run_browser_tests.py <page.html> [--frames N]",
+              file=sys.stderr)
         return 2
+
+    # Two kinds of page.
+    #
+    # A self-verifying test page runs its own checks and publishes
+    # window.__cryTestDone / __cryTestFailures; we wait for the verdict.
+    #
+    # The engine host has no verdict to publish -- it just runs -- so
+    # --frames N instead waits for it to have rendered N frames and checks it
+    # got there without a page error. That is the thing worth asserting about
+    # a frame loop in a browser: not that it ran, but that it kept YIELDING,
+    # since a loop that never returns to the event loop would hang here rather
+    # than count.
+    want_frames = 0
+    if "--frames" in sys.argv:
+        want_frames = int(sys.argv[sys.argv.index("--frames") + 1])
 
     page = os.path.abspath(sys.argv[1])
     directory = os.path.dirname(page)
@@ -99,11 +115,30 @@ def main():
 
         pg.goto(url, wait_until="load")
         try:
-            pg.wait_for_function("window.__cryTestDone === true", timeout=120000)
-            failures = pg.evaluate("window.__cryTestFailures")
+            if want_frames:
+                pg.wait_for_function("window.__cryStarted === true", timeout=120000)
+                if not pg.evaluate("window.__cryRenderer"):
+                    print("the engine started without a renderer", file=sys.stderr)
+                    failures = 1
+                else:
+                    pg.wait_for_function(
+                        "window.__cryFrame >= %d" % want_frames, timeout=120000)
+                    frames = pg.evaluate("window.__cryFrame")
+                    print("rendered %d frames" % frames)
+                    failures = 0
+            else:
+                pg.wait_for_function("window.__cryTestDone === true", timeout=120000)
+                failures = pg.evaluate("window.__cryTestFailures")
         except Exception as exc:
             print("the page never reported a result: %s" % exc, file=sys.stderr)
         browser.close()
+
+    # A thrown exception inside the frame callback stops rendering without
+    # necessarily stopping the page, so an otherwise-passing run that logged
+    # one is still a failure.
+    if failures == 0 and any(l.startswith("PAGEERROR:") for l in logs):
+        print("a page error was raised", file=sys.stderr)
+        failures = 1
 
     httpd.shutdown()
 

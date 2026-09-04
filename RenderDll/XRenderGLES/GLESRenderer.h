@@ -26,12 +26,23 @@
 	    CGLESRenderer overrides, and everything else is visibly inherited.
 	    "How far along is the renderer" has an exact answer at any moment.
 
-	  * The build enforces the split. XRenderGLES compiles every XRenderNULL
-	    source EXCEPT NULL_System.cpp, which is where CNULLRenderer's system
-	    and context layer lives. Leaving it out means those thirteen methods
-	    have no definition, so the link fails until this class provides them --
-	    and they are precisely the ones a real backend cannot inherit:
-	    context creation, resolution, gamma, resource lifetime, shutdown.
+	  * The delta is small enough to read. The override list below IS the
+	    scope of the backend so far; nothing else is claimed.
+
+	An earlier version of this comment said the build ENFORCED the split, by
+	leaving NULL_System.cpp out of the target so the thirteen methods it holds
+	would have no definition and the link would fail until this class supplied
+	them. That does not work, and the reason is worth writing down:
+	CNULLRenderer's vtable is emitted in NULL_Renderer.cpp -- the translation
+	unit defining its key function -- and a vtable needs every one of the
+	class's virtuals defined, whether or not a derived class overrides them.
+	Leaving the file out breaks the base class, not just the parts being
+	replaced. So NULL_System.cpp is compiled, with CRY_GLES_BACKEND removing
+	only its module-level tail: the engine-interface globals and the
+	PackageRenderConstructor, which this backend has to own instead.
+
+	What is real is therefore what this class declares, and that is a fact
+	about the code rather than something the toolchain checks.
 
 	This is a scaffold with a deliberate demolition order, not a permanent
 	arrangement. As each subsystem is written against GLES -- textures, vertex

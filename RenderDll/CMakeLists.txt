@@ -158,21 +158,20 @@ target_compile_definitions(CryRenderNULL PRIVATE NULL_RENDERER)
 ################################################################################
 # CryRenderGLES -- the WebGL2 backend, under construction.
 #
-# Same Common sources as the null backend, plus every one of XRenderNULL's own
-# sources EXCEPT NULL_System.cpp, plus this backend's files on top.
+# Same Common sources as the null backend, plus all of XRenderNULL's own
+# sources, plus this backend's files on top.
 #
-# The exclusion is the mechanism, not an oversight. NULL_System.cpp holds
-# CNULLRenderer's system and context layer -- Init, ShutDown, the context
-# calls, resolution, gamma -- and CGLESRenderer derives from CNULLRenderer.
-# Leaving that one file out means those thirteen methods have no definition in
-# this target, so the link fails until XRenderGLES supplies them. They are
-# exactly the ones a real backend cannot inherit.
+# CGLESRenderer derives from CNULLRenderer and overrides what it has
+# implemented for real; everything else falls back to Crytek's own draw-nothing
+# implementation, which is the correct behaviour for a backend entry point that
+# is not written yet. What is real is what CGLESRenderer overrides, and that is
+# readable from one class declaration. When the last subsystem moves from
+# inherited to overridden, the XRenderNULL sources drop out of this list.
 #
-# Everything else falls back to Crytek's own draw-nothing implementation, which
-# is the correct behaviour for a backend entry point that is not written yet,
-# and makes progress measurable: what is real is what CGLESRenderer overrides.
-# When the last subsystem moves from inherited to overridden, the XRenderNULL
-# sources drop out of this list and the backend stands alone.
+# CRY_GLES_BACKEND compiles out the tail of NULL_System.cpp -- the null
+# backend's engine-interface globals and its PackageRenderConstructor -- while
+# keeping CNULLRenderer's method bodies, which the class's vtable requires.
+# Exactly one backend can be in a link, and here it has to be the GLES one.
 #
 # NULL_RENDERER stays defined. It is what removes the references to
 # CPShader::mfForName, the nvDXT/ATI compressors and the Intel JPEG library
@@ -251,6 +250,7 @@ if(EMSCRIPTEN)
     XRenderNULL/NULL_Textures.cpp
     XRenderNULL/NULL_TexturesStreaming.cpp
     XRenderNULL/NULL_VertBuffer.cpp
+        XRenderNULL/NULL_System.cpp
         XRenderGLES/GLESContext.cpp
         XRenderGLES/GLESSystem.cpp
         XRenderGLES/GLESFrame.cpp
@@ -258,7 +258,7 @@ if(EMSCRIPTEN)
                  "${CMAKE_CURRENT_SOURCE_DIR}/XRenderGLES"
         DEPENDS  CryCommon
     )
-    target_compile_definitions(CryRenderGLES PRIVATE NULL_RENDERER)
+    target_compile_definitions(CryRenderGLES PRIVATE NULL_RENDERER CRY_GLES_BACKEND)
 else()
     # No GL on this target: no /usr/include/GL, no EGL. The backend exists for
     # WebGL2, and a native GLES path would need EGL with a surfaceless platform

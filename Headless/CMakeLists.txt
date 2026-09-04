@@ -15,6 +15,7 @@ cry_apply_common_settings(Headless)
 
 target_include_directories(Headless PRIVATE
     ${CMAKE_SOURCE_DIR}/CryCommon
+    ${CMAKE_SOURCE_DIR}/Hosts     # CryHostLog.h, shared with the browser host
 )
 
 # Shared with tests/, which links the same set for test_static_modules.

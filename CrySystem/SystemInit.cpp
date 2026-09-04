@@ -160,7 +160,18 @@ bool CSystem::OpenRenderLibrary(int type)
   type = R_DX8_RENDERER;
 #endif
 #if defined(LINUX)
+// [webport] Crytek's Linux target was a dedicated server, which had no
+// graphics backend at all -- XRenderOGL was never built for it -- so whatever
+// the driver cvar said, the only thing that could be loaded was the null
+// renderer, and this line made that unconditional.
+//
+// The web build does have a backend (XRenderGLES, WebGL2), so there the
+// requested type has to stand or it could never be selected. Native Linux
+// keeps the original behaviour, because the reason for it is still true
+// there: there is no GL backend to load.
+#if !defined(__EMSCRIPTEN__)
 	type = R_NULL_RENDERER;
+#endif
 #endif
 
 	static int test_int = 0;
@@ -907,7 +918,29 @@ bool CSystem::InitFont()
 		szError += ". You're probably running the executable from the wrong working folder.";
 		Error(szError.c_str());
 
+		// [webport] Missing font assets do not prevent the engine from
+		// existing on the web build.
+		//
+		// The diagnosis this error offers -- "the wrong working folder" -- is
+		// the right one for a desktop install, where the assets are on disk
+		// beside the executable and their absence means a broken setup. In a
+		// browser there is no working folder and no local install: the engine
+		// starts against an empty filesystem and game data arrives afterwards,
+		// over the network. Refusing to initialise until an asset is present
+		// makes that ordering impossible.
+		//
+		// The engine already takes this view of missing .pak archives, which
+		// ZipDir reports and CSystem carries on past. A font is no more
+		// fundamental than the archives that contain one.
+		//
+		// The consequence is real and worth stating: with no font loaded there
+		// is no console text and no HUD text. That is a degraded engine, not a
+		// broken one, and it says so above.
+#if defined(_CRY_WEBPORT)
+		GetILog()->LogWarning( "Continuing without a default font; text will not be drawn" );
+#else
 		return false;
+#endif
 	}
 
 	int n = szFontPath.find("default.xml");
@@ -922,7 +955,12 @@ bool CSystem::InitFont()
 		szError += ". You're probably running the executable from the wrong working folder.";
 		Error(szError.c_str());
 
+#if defined(_CRY_WEBPORT)
+		// See the default font above.
+		GetILog()->LogWarning( "Continuing without a console font" );
+#else
 		return false;
+#endif
 	}
 
 	return true;
