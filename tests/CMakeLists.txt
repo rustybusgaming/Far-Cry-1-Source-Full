@@ -96,7 +96,11 @@ if(EMSCRIPTEN)
                          # together show the geometry landed in the right place
                          # and the BGRA-to-RGBA swizzle is right.
                          --expect-centre 32,128,224
-                         --expect-corner 0,0,0)
+                         --expect-corner 0,0,0
+                         # The textured quad. Its texel is uploaded as
+                         # eTF_8888 -- the engine's BGRA -- so this covers the
+                         # CPU reorder in GLESTexture.cpp as well as sampling.
+                         --expect-textured 192,64,16)
         set_tests_properties(web_host_frames PROPERTIES TIMEOUT 300)
     endif()
 endif()

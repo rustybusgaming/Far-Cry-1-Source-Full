@@ -128,6 +128,23 @@ public:
 	virtual void	DrawDynVB(struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F* pBuf, ushort* pInds,
 	                          int nVerts, int nInds, int nPrimType);
 
+	//////////////////////////////////////////////////////////////////////
+	// Textures. The engine passes these around as plain integer ids; see
+	// GLESTexture.h for how those map onto GL names.
+	//////////////////////////////////////////////////////////////////////
+	virtual unsigned int DownLoadToVideoMemory(unsigned char* data, int w, int h,
+	                                           ETEX_Format eTFSrc, ETEX_Format eTFDst,
+	                                           int nummipmap, bool repeat = true,
+	                                           int filter = FILTER_BILINEAR, int Id = 0,
+	                                           char* szCacheName = NULL, int flags = 0);
+
+	virtual void	UpdateTextureInVideoMemory(uint tid, unsigned char* data,
+	                                           int posx, int posy, int w, int h,
+	                                           ETEX_Format eTF = eTF_0888);
+
+	virtual void	RemoveTexture(unsigned int TextureId);
+	virtual void	SetTexture(int tnum, ETexType eTT = eTT_Base);
+
 	//! Free the GL objects the drawing path owns. Separate from ShutDown so a
 	//! context loss can be recovered from without tearing the renderer down.
 	void			ReleaseDrawResources();

@@ -23,6 +23,7 @@
 #include "GLESRenderer.h"
 #include "GLESContext.h"
 #include "GLESShader.h"
+#include "GLESTexture.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -147,6 +148,7 @@ void CGLESRenderer::ReleaseDrawResources()
 	if (m_nDynIBO)	glDeleteBuffers(1, &m_nDynIBO);
 
 	GLESShader_Shutdown();
+	GLESTexture_Shutdown();
 #endif
 
 	m_nDynVAO = m_nDynVBO = m_nDynIBO = 0;
@@ -364,11 +366,14 @@ void CGLESRenderer::DrawDynamic(const struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F* pVe
 	if (pProgram->nMVP >= 0)
 		glUniformMatrix4fv(pProgram->nMVP, 1, GL_FALSE, m_matMVP);
 
-	// Untextured until the texture manager is written against GLES. Vertex
-	// colour alone is what the engine's debug drawing and untextured UI use,
-	// and it is honest about what is and is not implemented.
+	// Sample only if something is bound. The shader multiplies the texture by
+	// the vertex colour, so an untextured draw is not a special case -- it is
+	// the same program with the sampler switched off.
+	const bool bTextured = GLESTexture_IsBound();
 	if (pProgram->nUseTexture >= 0)
-		glUniform1i(pProgram->nUseTexture, 0);
+		glUniform1i(pProgram->nUseTexture, bTextured ? 1 : 0);
+	if (bTextured && pProgram->nSampler >= 0)
+		glUniform1i(pProgram->nSampler, 0);	// texture unit 0
 
 	if (m_b2DMode)
 	{
@@ -382,5 +387,64 @@ void CGLESRenderer::DrawDynamic(const struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F* pVe
 		glDrawArrays(eMode, 0, nVerts);
 
 	glBindVertexArray(0);
+#endif
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Texture entry points.
+//
+// These are thin: the work is in GLESTexture.cpp. What they add is the
+// translation from the engine's vocabulary -- an ETEX_Format that means
+// something different from a GL one, a filter enum, a mip count -- into it.
+//////////////////////////////////////////////////////////////////////////
+
+unsigned int CGLESRenderer::DownLoadToVideoMemory(unsigned char* data, int w, int h,
+                                                  ETEX_Format eTFSrc, ETEX_Format eTFDst,
+                                                  int nummipmap, bool repeat, int filter,
+                                                  int Id, char* szCacheName, int flags)
+{
+#if defined(__EMSCRIPTEN__)
+	if (!GLESContext_IsCreated())
+		return 0;
+
+	// eTFSrc describes the bytes we were handed, which is what the upload
+	// needs to know. eTFDst is what the engine would LIKE it stored as, and is
+	// ignored: WebGL2 has no way to ask the driver to compress on upload, so
+	// uncompressed data stays uncompressed and already-compressed data is
+	// passed through as it is.
+	//
+	// nummipmap > 1 means the caller wants a mip chain. It does not mean the
+	// caller supplied one -- the mip levels are generated here.
+	return GLESTexture_Upload((unsigned int)Id, data, w, h, (int)eTFSrc,
+	                          repeat, nummipmap > 1);
+#else
+	return 0;
+#endif
+}
+
+void CGLESRenderer::UpdateTextureInVideoMemory(uint tid, unsigned char* data,
+                                               int posx, int posy, int w, int h,
+                                               ETEX_Format eTF)
+{
+#if defined(__EMSCRIPTEN__)
+	GLESTexture_UpdateRegion(tid, data, posx, posy, w, h, (int)eTF);
+#endif
+}
+
+void CGLESRenderer::RemoveTexture(unsigned int TextureId)
+{
+#if defined(__EMSCRIPTEN__)
+	GLESTexture_Remove(TextureId);
+#endif
+}
+
+void CGLESRenderer::SetTexture(int tnum, ETexType eTT)
+{
+#if defined(__EMSCRIPTEN__)
+	// One texture unit so far. eTT selects between the base map, bump map,
+	// environment map and so on, which only becomes meaningful when the shader
+	// system has stages that consume them; until then every request binds to
+	// unit 0 and the base map is what gets drawn.
+	GLESTexture_Bind((unsigned int)tnum);
 #endif
 }

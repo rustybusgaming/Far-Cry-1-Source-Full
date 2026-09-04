@@ -900,13 +900,52 @@ to reject it. Nothing in the frame path calls it: `glReadPixels` is a hard
 synchronisation point, and on the web the answer also has to cross back out of
 the GPU process.
 
+## Textures
+
+`DownLoadToVideoMemory`, `UpdateTextureInVideoMemory`, `SetTexture` and
+`RemoveTexture` now work, so the engine can put pixels on the GPU and sample
+them:
+
+```
+[web] proof texture id 1
+[web] untextured 32,128,224  textured 192,64,16  corner 0,0,0
+```
+
+The textured quad's texel is uploaded as `eTF_8888` — the engine's BGRA — as
+`{0x10,0x40,0xC0}`, and comes back as `192,64,16`. All three samples are
+asserted, and the negative case was checked against `16,64,192`, which is
+exactly the failure a missed swizzle would produce.
+
+Three things worth recording:
+
+- **BGRA has to be reordered on the CPU.** `eTF_8888` is, in the engine's own
+  header, "usually BGRA". GLES 3.0 can express that with
+  `GL_TEXTURE_SWIZZLE_R`/`_B`, but **WebGL2 does not expose texture swizzle**,
+  so the reorder happens at upload. Once per texture rather than per frame, and
+  skipped entirely for `eTF_RGBA` — which is why that format exists as a
+  separate entry, its own comment noting it was "used only in
+  `CGLRenderer::DownLoadToVideoMemory`".
+- **DXT goes straight through.** Compressed data must *not* be touched;
+  DXT1/3/5 upload via `glCompressedTexImage2D`. Since Chromium reports
+  `WEBGL_compressed_texture_s3tc` available and Far Cry's textures are almost
+  entirely DXT, the common case is a direct upload with no CPU work at all.
+- **The min filter is a trap.** A texture with no mip chain whose minification
+  filter asks for one is *incomplete* and samples as solid black, with no error
+  reported anywhere. The upload path sets `GL_LINEAR` unless it actually
+  generated mipmaps. `GL_UNPACK_ALIGNMENT` is set to 1 for the same class of
+  reason: the default of 4 silently skews any upload whose row length is not a
+  multiple of four.
+
+Mipmaps are generated rather than read: `nummipmap > 1` means the caller wants a
+chain, not that it supplied one. Real DXT assets carry their own, which this
+path does not read yet.
+
 ### Next
 
-Textures, then the shading pipeline. `DrawDynVB` is untextured so far —
-`uUseTexture` is wired in the shader and always 0, because the texture manager
-has not been written against GLES yet. After that, the static vertex buffers the
-world geometry uses, and then the shader translation itself, which remains the
-largest single piece of work in the renderer.
+The static vertex buffers world geometry uses (`CreateBuffer`/`DrawBuffer`),
+then the shader translation — turning Crytek's shader scripts, register
+combiners and assembly programs into GLSL ES. That remains the largest single
+piece of work in the renderer, and nothing before it draws a world.
 
 ---
 

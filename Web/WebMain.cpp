@@ -57,6 +57,7 @@ struct SWebHost
 	IRenderer*		pRenderer;
 	CCryHostLog*	pLog;
 	unsigned		nFrame;
+	unsigned		nProofTexture;
 	bool			bQuit;
 };
 
@@ -93,33 +94,82 @@ static void DrawProofOfLife(IRenderer* pRenderer)
 	// Screen space, y down from the top-left -- the engine's 2D convention.
 	pRenderer->Set2DMode(true, nWidth, nHeight);
 
-	// A quad over the middle quarter of the screen, so a test can sample the
-	// centre and a corner and tell them apart.
-	const float x0 = nWidth  * 0.25f, x1 = nWidth  * 0.75f;
-	const float y0 = nHeight * 0.25f, y1 = nHeight * 0.75f;
+	const float yTop = nHeight * 0.25f, yBot = nHeight * 0.75f;
+	unsigned short inds[4] = { 0, 1, 2, 3 };
 
 	struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F v[4];
+
+	//////////////////////////////////////////////////////////////////////
+	// Left: untextured, drawn from vertex colour alone.
+	//
+	// UCol is B,G,R,A when gbRgb is false, which every backend in this tree
+	// sets. Writing the bytes in that order -- rather than whichever looks
+	// right -- is what makes this a test of the shader's swizzle. Wanted out:
+	// R=0x20, G=0x80, B=0xE0.
+	//////////////////////////////////////////////////////////////////////
 	memset(v, 0, sizeof(v));
+	v[0].xyz = Vec3(nWidth * 0.15f, yTop, 0.0f);
+	v[1].xyz = Vec3(nWidth * 0.45f, yTop, 0.0f);
+	v[2].xyz = Vec3(nWidth * 0.45f, yBot, 0.0f);
+	v[3].xyz = Vec3(nWidth * 0.15f, yBot, 0.0f);
 
-	v[0].xyz = Vec3(x0, y0, 0.0f);
-	v[1].xyz = Vec3(x1, y0, 0.0f);
-	v[2].xyz = Vec3(x1, y1, 0.0f);
-	v[3].xyz = Vec3(x0, y1, 0.0f);
-
-	// UCol is B,G,R,A when gbRgb is false, which is what every backend in this
-	// tree sets. Writing the bytes in that order here -- rather than picking
-	// whatever looks right -- is what makes this a test of the shader's
-	// swizzle. Wanted: R=0x20, G=0x80, B=0xE0.
 	for (int i = 0; i < 4; ++i)
 	{
 		v[i].color.bcolor[0] = 0xE0;	// blue
 		v[i].color.bcolor[1] = 0x80;	// green
 		v[i].color.bcolor[2] = 0x20;	// red
-		v[i].color.bcolor[3] = 0xFF;	// alpha
+		v[i].color.bcolor[3] = 0xFF;
 	}
 
-	unsigned short inds[4] = { 0, 1, 2, 3 };
+	pRenderer->SetTexture(0);	// nothing bound: untextured
 	pRenderer->DrawDynVB(v, inds, 4, 4, R_PRIMV_QUADS);
+
+	//////////////////////////////////////////////////////////////////////
+	// Right: textured, with white vertices so the result is the texel.
+	//
+	// The texture is uploaded as eTF_8888 -- the engine's BGRA -- so this
+	// exercises the CPU reorder in GLESTexture.cpp as well as the sampling.
+	// Texel BGRA {0x10,0x40,0xC0} should come back as RGB C0,40,10.
+	//////////////////////////////////////////////////////////////////////
+	if (!g_host.nProofTexture)
+	{
+		unsigned char texel[2 * 2 * 4];
+		for (int i = 0; i < 4; ++i)
+		{
+			texel[i * 4 + 0] = 0x10;	// B
+			texel[i * 4 + 1] = 0x40;	// G
+			texel[i * 4 + 2] = 0xC0;	// R
+			texel[i * 4 + 3] = 0xFF;	// A
+		}
+
+		g_host.nProofTexture = pRenderer->DownLoadToVideoMemory(
+			texel, 2, 2, eTF_8888, eTF_8888, /*nummipmap*/ 1, /*repeat*/ true);
+
+		printf("[web] proof texture id %u\n", g_host.nProofTexture);
+	}
+
+	memset(v, 0, sizeof(v));
+	v[0].xyz = Vec3(nWidth * 0.55f, yTop, 0.0f);
+	v[1].xyz = Vec3(nWidth * 0.85f, yTop, 0.0f);
+	v[2].xyz = Vec3(nWidth * 0.85f, yBot, 0.0f);
+	v[3].xyz = Vec3(nWidth * 0.55f, yBot, 0.0f);
+
+	v[0].st[0] = 0.0f; v[0].st[1] = 0.0f;
+	v[1].st[0] = 1.0f; v[1].st[1] = 0.0f;
+	v[2].st[0] = 1.0f; v[2].st[1] = 1.0f;
+	v[3].st[0] = 0.0f; v[3].st[1] = 1.0f;
+
+	for (int i = 0; i < 4; ++i)
+	{
+		v[i].color.bcolor[0] = 0xFF;
+		v[i].color.bcolor[1] = 0xFF;
+		v[i].color.bcolor[2] = 0xFF;
+		v[i].color.bcolor[3] = 0xFF;
+	}
+
+	pRenderer->SetTexture(g_host.nProofTexture);
+	pRenderer->DrawDynVB(v, inds, 4, 4, R_PRIMV_QUADS);
+	pRenderer->SetTexture(0);
 
 	pRenderer->Set2DMode(false, nWidth, nHeight);
 }
@@ -149,11 +199,16 @@ static void PublishPixelSample(IRenderer* pRenderer)
 	// glReadPixels' origin is bottom-left, so row 0 is the bottom of the
 	// screen. The centre is unaffected by that; the corner sample is taken
 	// from row 0 either way, which is a corner regardless of orientation.
-	const int nCentre = ((h / 2) * w + (w / 2)) * 4;
+	// Three samples: the untextured quad on the left, the textured one on the
+	// right, and a corner that should still be the clear -- which is what shows
+	// the geometry landed somewhere rather than covering the screen.
+	const int nCentre = ((h / 2) * w + (int)(w * 0.30f)) * 4;
+	const int nTex    = ((h / 2) * w + (int)(w * 0.70f)) * 4;
 	const int nCorner = 0;
 
-	printf("[web] centre pixel %d,%d,%d  corner %d,%d,%d\n",
+	printf("[web] untextured %d,%d,%d  textured %d,%d,%d  corner %d,%d,%d\n",
 	       pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
+	       pPixels[nTex + 0], pPixels[nTex + 1], pPixels[nTex + 2],
 	       pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2]);
 
 	// No commas inside the braced block: EM_ASM is a macro, and the
@@ -166,9 +221,13 @@ static void PublishPixelSample(IRenderer* pRenderer)
 		window.__cryCornerR = $3;
 		window.__cryCornerG = $4;
 		window.__cryCornerB = $5;
+		window.__cryTexR = $6;
+		window.__cryTexG = $7;
+		window.__cryTexB = $8;
 	},
 	pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
-	pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2]);
+	pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2],
+	pPixels[nTex + 0], pPixels[nTex + 1], pPixels[nTex + 2]);
 
 	free(pPixels);
 }
