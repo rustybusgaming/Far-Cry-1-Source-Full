@@ -58,6 +58,8 @@ struct SWebHost
 	CCryHostLog*	pLog;
 	unsigned		nFrame;
 	unsigned		nProofTexture;
+	CVertexBuffer*	pProofBuffer;
+	SVertexStream	proofIndices;
 	bool			bQuit;
 };
 
@@ -94,7 +96,7 @@ static void DrawProofOfLife(IRenderer* pRenderer)
 	// Screen space, y down from the top-left -- the engine's 2D convention.
 	pRenderer->Set2DMode(true, nWidth, nHeight);
 
-	const float yTop = nHeight * 0.25f, yBot = nHeight * 0.75f;
+	const float yTop = nHeight * 0.15f, yBot = nHeight * 0.45f;
 	unsigned short inds[4] = { 0, 1, 2, 3 };
 
 	struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F v[4];
@@ -171,6 +173,61 @@ static void DrawProofOfLife(IRenderer* pRenderer)
 	pRenderer->DrawDynVB(v, inds, 4, 4, R_PRIMV_QUADS);
 	pRenderer->SetTexture(0);
 
+	//////////////////////////////////////////////////////////////////////
+	// Below: the STATIC buffer path -- CreateBuffer, UpdateBuffer,
+	// CreateIndexBuffer, DrawBuffer. This is the route world geometry takes,
+	// and it is a different code path from DrawDynVB in every respect: a real
+	// CVertexBuffer, a GL buffer that lives across frames, and attributes bound
+	// from the engine's own format tables rather than one fixed layout.
+	//
+	// Built once and drawn every frame afterwards, which is also what makes it
+	// a fair test of the buffer surviving between frames.
+	//////////////////////////////////////////////////////////////////////
+	const float ySTop = nHeight * 0.55f, ySBot = nHeight * 0.85f;
+
+	if (!g_host.pProofBuffer)
+	{
+		g_host.pProofBuffer = pRenderer->CreateBuffer(
+			4, VERTEX_FORMAT_P3F_COL4UB_TEX2F, "proof", false);
+
+		if (g_host.pProofBuffer)
+		{
+			struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F sv[4];
+			memset(sv, 0, sizeof(sv));
+
+			sv[0].xyz = Vec3(nWidth * 0.35f, ySTop, 0.0f);
+			sv[1].xyz = Vec3(nWidth * 0.65f, ySTop, 0.0f);
+			sv[2].xyz = Vec3(nWidth * 0.65f, ySBot, 0.0f);
+			sv[3].xyz = Vec3(nWidth * 0.35f, ySBot, 0.0f);
+
+			// BGRA {0x30,0xB0,0x60} -> RGB 96,176,48
+			for (int i = 0; i < 4; ++i)
+			{
+				sv[i].color.bcolor[0] = 0x30;
+				sv[i].color.bcolor[1] = 0xB0;
+				sv[i].color.bcolor[2] = 0x60;
+				sv[i].color.bcolor[3] = 0xFF;
+			}
+
+			pRenderer->UpdateBuffer(g_host.pProofBuffer, sv, 4, true, 0, VSF_GENERAL);
+
+			// Triangles, because DrawBuffer does not expand quads -- the
+			// indices are already in a GL buffer by then and rewriting them
+			// would mean reading them back.
+			static unsigned short sInds[6] = { 0, 1, 2, 0, 2, 3 };
+			pRenderer->CreateIndexBuffer(&g_host.proofIndices, sInds, 6);
+
+			printf("[web] static buffer created\n");
+		}
+	}
+
+	if (g_host.pProofBuffer)
+	{
+		pRenderer->SetTexture(0);
+		pRenderer->DrawBuffer(g_host.pProofBuffer, &g_host.proofIndices, 6, 0,
+		                      R_PRIMV_TRIANGLES);
+	}
+
 	pRenderer->Set2DMode(false, nWidth, nHeight);
 }
 
@@ -199,16 +256,22 @@ static void PublishPixelSample(IRenderer* pRenderer)
 	// glReadPixels' origin is bottom-left, so row 0 is the bottom of the
 	// screen. The centre is unaffected by that; the corner sample is taken
 	// from row 0 either way, which is a corner regardless of orientation.
-	// Three samples: the untextured quad on the left, the textured one on the
-	// right, and a corner that should still be the clear -- which is what shows
-	// the geometry landed somewhere rather than covering the screen.
-	const int nCentre = ((h / 2) * w + (int)(w * 0.30f)) * 4;
-	const int nTex    = ((h / 2) * w + (int)(w * 0.70f)) * 4;
+	// glReadPixels' origin is bottom-left; the engine's screen space is
+	// top-left. Sampling by screen coordinate means flipping the row, and
+	// getting that wrong would swap the two bands and quietly compare the
+	// wrong quads.
+	#define SAMPLE(fx, fy) \
+		(((h - 1 - (int)(h * (fy))) * w + (int)(w * (fx))) * 4)
+
+	const int nCentre = SAMPLE(0.30f, 0.30f);	// untextured, dynamic
+	const int nTex    = SAMPLE(0.70f, 0.30f);	// textured, dynamic
+	const int nStatic = SAMPLE(0.50f, 0.70f);	// static buffer
 	const int nCorner = 0;
 
-	printf("[web] untextured %d,%d,%d  textured %d,%d,%d  corner %d,%d,%d\n",
+	printf("[web] untextured %d,%d,%d  textured %d,%d,%d  static %d,%d,%d  corner %d,%d,%d\n",
 	       pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
 	       pPixels[nTex + 0], pPixels[nTex + 1], pPixels[nTex + 2],
+	       pPixels[nStatic + 0], pPixels[nStatic + 1], pPixels[nStatic + 2],
 	       pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2]);
 
 	// No commas inside the braced block: EM_ASM is a macro, and the
@@ -224,10 +287,14 @@ static void PublishPixelSample(IRenderer* pRenderer)
 		window.__cryTexR = $6;
 		window.__cryTexG = $7;
 		window.__cryTexB = $8;
+		window.__cryStaticR = $9;
+		window.__cryStaticG = $10;
+		window.__cryStaticB = $11;
 	},
 	pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
 	pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2],
-	pPixels[nTex + 0], pPixels[nTex + 1], pPixels[nTex + 2]);
+	pPixels[nTex + 0], pPixels[nTex + 1], pPixels[nTex + 2],
+	pPixels[nStatic + 0], pPixels[nStatic + 1], pPixels[nStatic + 2]);
 
 	free(pPixels);
 }

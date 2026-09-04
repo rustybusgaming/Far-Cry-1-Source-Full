@@ -73,6 +73,7 @@ def main():
     want_centre = rgb_arg("--expect-centre")
     want_corner = rgb_arg("--expect-corner")
     want_tex    = rgb_arg("--expect-textured")
+    want_static = rgb_arg("--expect-static")
 
     page = os.path.abspath(sys.argv[1])
     directory = os.path.dirname(page)
@@ -143,7 +144,8 @@ def main():
 
                     for name, want, prefix in (("centre", want_centre, "__cryCentre"),
                                                ("corner", want_corner, "__cryCorner"),
-                                               ("texture", want_tex, "__cryTex")):
+                                               ("texture", want_tex, "__cryTex"),
+                                               ("static", want_static, "__cryStatic")):
                         if want is None:
                             continue
                         pg.wait_for_function(

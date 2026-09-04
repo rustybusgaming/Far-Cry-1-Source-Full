@@ -145,6 +145,33 @@ public:
 	virtual void	RemoveTexture(unsigned int TextureId);
 	virtual void	SetTexture(int tnum, ETexType eTT = eTT_Base);
 
+	//////////////////////////////////////////////////////////////////////
+	// Static vertex and index buffers -- the path world geometry uses.
+	//
+	// Unlike the dynamic path, these are filled once and drawn many times, and
+	// they arrive in any of the engine's seventeen vertex formats rather than
+	// one fixed layout.
+	//////////////////////////////////////////////////////////////////////
+	virtual CVertexBuffer*	CreateBuffer(int buffersize, int vertexformat,
+	                                     const char* szSource, bool bDynamic = false);
+	virtual void			CreateBuffer(int size, int vertexformat, CVertexBuffer* buf,
+	                                     int Type, const char* szSource);
+	virtual void			ReleaseBuffer(CVertexBuffer* bufptr);
+	virtual void			UpdateBuffer(CVertexBuffer* dest, const void* src, int size,
+	                                     bool bUnlock, int offs = 0, int Type = 0);
+
+	virtual void			CreateIndexBuffer(SVertexStream* dest, const void* src,
+	                                          int indexcount);
+	virtual void			UpdateIndexBuffer(SVertexStream* dest, const void* src,
+	                                          int indexcount, bool bUnLock = true);
+	virtual void			ReleaseIndexBuffer(SVertexStream* dest);
+
+	virtual void			DrawBuffer(CVertexBuffer* src, SVertexStream* indicies,
+	                                   int numindices, int offsindex, int prmode,
+	                                   int vert_start = 0, int vert_stop = 0,
+	                                   CMatInfo* mi = NULL);
+	virtual void			DrawTriStrip(CVertexBuffer* src, int vert_num);
+
 	//! Free the GL objects the drawing path owns. Separate from ShutDown so a
 	//! context loss can be recovered from without tearing the renderer down.
 	void			ReleaseDrawResources();

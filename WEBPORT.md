@@ -940,12 +940,65 @@ Mipmaps are generated rather than read: `nummipmap > 1` means the caller wants a
 chain, not that it supplied one. Real DXT assets carry their own, which this
 path does not read yet.
 
+## Static vertex buffers
+
+`CreateBuffer`, `UpdateBuffer`, `CreateIndexBuffer`, `DrawBuffer` and
+`ReleaseBuffer` now work — the path world geometry takes, as distinct from the
+dynamic one:
+
+```
+[web] static buffer created
+[web] untextured 32,128,224  textured 192,64,16  static 96,176,48  corner 0,0,0
+```
+
+All four samples are asserted, each in a different colour so no two can be
+confused, and the static one was verified to fail when its expected value is
+changed.
+
+### Seventeen formats, one binder
+
+The engine has seventeen vertex formats. `XRenderOGL` handles them with a switch
+per entry point — each case naming a struct and calling the matching
+`glVertexPointer`/`glColorPointer`/`glTexCoordPointer` trio — roughly 200 lines
+repeated in several places, and a place to forget a format.
+
+It doesn't need to be written that way, because **the engine already ships the
+description**. `CryCommon/VertexFormats.h` has `m_VertexSize[]` giving every
+format's stride and `gBufInfoTable[]` giving the byte offset of the colour,
+texture coordinate, secondary colour and normal within it. Those two tables are
+enough to bind any format generically, so this backend has one binder instead of
+seventeen cases, and a format added to the engine works here without a change.
+
+The tables use `0` to mean "this format has no such attribute" — position is
+always at offset 0, so a zero colour offset cannot be a real one. That is the
+same convention `CLeafBuffer` reads them with.
+
+Two details that would otherwise be silent:
+
+- **A disabled vertex attribute keeps whatever constant was last set for it.**
+  Formats without a colour get an explicit white rather than an assumption.
+- **`TRP3F` positions are pre-transformed** — `x,y,z,rhw`, already in screen
+  space. Running them through a projection would put them somewhere arbitrary.
+  The engine only uses that format in 2D, so `DrawBuffer` says so out loud if it
+  ever sees one outside 2D mode rather than drawing it wrong.
+
+A VAO is cached per GL buffer, since a static mesh's layout never changes and
+each `glVertexAttribPointer` is a separate crossing into JavaScript.
+
+`DrawBuffer` does *not* expand `R_PRIMV_QUADS` the way the dynamic path does:
+by then the indices are already in a GL buffer, and rewriting them would mean
+reading them back. It logs once and skips.
+
+The engine's indices are 16-bit throughout, capping a buffer at 65536 vertices.
+That limit belongs to the data, not to this backend — WebGL2 supports 32-bit
+indices, so it is the meshes that would have to change.
+
 ### Next
 
-The static vertex buffers world geometry uses (`CreateBuffer`/`DrawBuffer`),
-then the shader translation — turning Crytek's shader scripts, register
-combiners and assembly programs into GLSL ES. That remains the largest single
-piece of work in the renderer, and nothing before it draws a world.
+The shader translation: turning Crytek's shader scripts, register combiners and
+assembly programs into GLSL ES. That remains the largest single piece of work in
+the renderer, and nothing before it draws a world — everything drawn so far goes
+through one hand-written program.
 
 ---
 

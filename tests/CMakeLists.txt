@@ -100,7 +100,12 @@ if(EMSCRIPTEN)
                          # The textured quad. Its texel is uploaded as
                          # eTF_8888 -- the engine's BGRA -- so this covers the
                          # CPU reorder in GLESTexture.cpp as well as sampling.
-                         --expect-textured 192,64,16)
+                         --expect-textured 192,64,16
+                         # The static-buffer quad: CreateBuffer, UpdateBuffer,
+                         # CreateIndexBuffer, DrawBuffer -- the route world
+                         # geometry takes, with attributes bound from the
+                         # engine's own vertex-format tables.
+                         --expect-static 96,176,48)
         set_tests_properties(web_host_frames PROPERTIES TIMEOUT 300)
     endif()
 endif()
