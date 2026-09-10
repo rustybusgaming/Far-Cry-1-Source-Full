@@ -993,12 +993,99 @@ The engine's indices are 16-bit throughout, capping a buffer at 65536 vertices.
 That limit belongs to the data, not to this backend — WebGL2 supports 32-bit
 indices, so it is the meshes that would have to change.
 
+---
+
+## Shader translation
+
+### "Far Cry's shaders" is three things wearing one name
+
+Only one of them is what has been translated:
+
+1. **The fixed-function texture-stage pipeline.** Each pass carries a list of
+   `SShaderTexUnit`, and each unit says *combine my texture with what came
+   before, using this operation and these two arguments* — `eCO_MODULATE`,
+   `eCO_BLENDTEXTUREALPHA`, `eCO_DOTPRODUCT3` and so on. This is the D3D8-era
+   `SetTextureStageState` model: 24 operations, 5 argument sources, two 3-bit
+   arguments packed into one int. It is the bulk of the shaders, it is fully
+   described by data the engine already parses, and **this is now translated to
+   WGSL**.
+2. **NV register combiners and ARB/NV assembly programs.** Separate problem, not
+   started.
+3. **Cg programs**, whose compiler ships as a binary blob with no source and so
+   cannot be run at all. Those need re-authoring, not translating.
+
+A useful thing fell out of the survey: `m_eEvalRGB`/`m_eEvalAlpha` are *not*
+combiner ops, they are vertex-colour **sources**, and that work is CPU-side in
+`Common/EvalFuncs_*.cpp` — already ported and compiling. Colours arrive in the
+vertex buffer already computed, so the shader just reads them.
+
+### The translator is a pure function, and that is the point
+
+`WGPUShaderGen` takes a stage description and returns WGSL. No device, no
+adapter, no browser — so it compiles natively and is **unit-tested natively**,
+40 assertions in `tests/test_shadergen.cpp`, running in both the native and wasm
+CI jobs.
+
+That matters more than it sounds. This container cannot obtain a WebGPU adapter,
+so nothing touching the GPU can be verified here. Keeping the *translation*
+separate from the *execution* means the part with all the judgement calls in it
+is fully checked anyway — what stage 0's "previous" is, what `eCO_DOTPRODUCT3`
+means, which operations cannot be expressed. What stays unverified is the
+comparatively mechanical business of handing a string to a driver.
+
+Emitted for the commonest pass in the engine — one texture modulated by vertex
+colour:
+
+```wgsl
+@fragment
+fn fs_main(in : VSOut) -> @location(0) vec4f {
+  let diffuse  = in.color;
+  let specular = vec4f(0.0, 0.0, 0.0, 0.0);
+  var acc = diffuse;
+
+  let texel = textureSample(tex0, samp0, in.uv);
+  let c0 = (texel * diffuse);
+  let a0 = (texel * diffuse);
+  acc = vec4f(c0.rgb, a0.a);
+
+  return acc;
+}
+```
+
+### Decisions worth naming
+
+- **Stage 0's "previous" is the diffuse colour**, not black or white. That is
+  what makes a lone `eCO_MODULATE` against `eCA_Previous` produce "texture times
+  vertex colour" rather than "texture times nothing". Asserted.
+- **Three operations are rejected rather than approximated.**
+  `eCO_MULTIPLYADD` needs a third argument the packing has no room for;
+  `eCO_BUMPENVMAP` needs the stage's bump matrix; `eCO_BLEND` needs a blend
+  factor from render state. All three fail the build with a named reason. A
+  shader that fails to build is a visible problem; one that silently computes
+  something else costs days.
+- **Alpha test becomes a `discard`.** WebGPU has no alpha-test render state — it
+  went with the rest of the fixed-function pipeline.
+- **The BGRA swizzle is here too**, for the same reason as WebGL2: the engine
+  stores `UCol` as B,G,R,A and WebGPU has no BGRA vertex format either.
+- **Colour and alpha are separate operations on the same stage**, computed into
+  their own locals and recombined — exactly what the hardware did. Emitting them
+  inline would write each expression twice, once for `.rgb` and once for `.a`.
+
+### The cache key
+
+WebGPU bakes shaders, blend state and vertex layout into an **immutable pipeline
+object**, and building one is far too expensive to do per draw. So every
+description needs a stable key, and everything that changes the emitted source
+has to be in it — including the alpha threshold, not merely whether there is
+one. Two passes colliding on one key would render one with the other's shader.
+Six separate assertions cover that.
+
 ### Next
 
-The shader translation: turning Crytek's shader scripts, register combiners and
-assembly programs into GLSL ES. That remains the largest single piece of work in
-the renderer, and nothing before it draws a world — everything drawn so far goes
-through one hand-written program.
+Wiring the generator into a pipeline cache in `XRenderWGPU`, then reading real
+`SShaderPass` data through it. After that, the register-combiner and assembly
+paths — and those need a machine with a GPU to check, plus a copy of the game,
+since `.efx` shader scripts are assets and are not in this tree.
 
 ---
 

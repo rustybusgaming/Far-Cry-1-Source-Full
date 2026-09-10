@@ -24,6 +24,21 @@ target_link_libraries(test_webinput PRIVATE CryCommon)
 
 add_test(NAME webinput COMMAND test_webinput)
 
+# The CryEngine-pass to WGSL translation.
+#
+# Built for BOTH targets, and deliberately so. It is the only part of the
+# WebGPU backend that can be verified anywhere: the translation is a pure
+# function, so it needs no device, no adapter and no browser. Everything else
+# in that backend touches the GPU and cannot be checked without one.
+add_executable(test_shadergen test_shadergen.cpp
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp")
+cry_apply_common_settings(test_shadergen)
+target_include_directories(test_shadergen PRIVATE
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
+target_link_libraries(test_shadergen PRIVATE CryCommon)
+
+add_test(NAME shadergen COMMAND test_shadergen)
+
 # The compiled-in module registry that replaces dlopen()/dlsym(). It links the
 # whole module set, because the point of the test is that the real factories
 # resolve -- a table checked against stubs would prove nothing.
