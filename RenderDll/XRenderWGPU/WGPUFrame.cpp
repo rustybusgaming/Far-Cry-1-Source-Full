@@ -77,11 +77,32 @@ void CWGPURenderer::BeginFrame()
 	}
 
 	g_backbuffer = surfaceTexture.texture;
+
+	// WebGPU reports failure by returning a null handle -- there is no
+	// glGetError to ask afterwards -- so each handle is checked where it is
+	// created. Carrying a null forward turns one failed call into a validation
+	// error blamed on the next one, and leaks whatever was created before it.
 	g_backbufferView = wgpuTextureCreateView(g_backbuffer, 0);
+	if (!g_backbufferView)
+	{
+		iLog->LogError("XRenderWGPU: backbuffer view creation failed");
+		wgpuTextureRelease(g_backbuffer);
+		g_backbuffer = 0;
+		return;
+	}
 
 	WGPUCommandEncoderDescriptor encDesc;
 	memset(&encDesc, 0, sizeof(encDesc));
 	g_encoder = wgpuDeviceCreateCommandEncoder(device, &encDesc);
+	if (!g_encoder)
+	{
+		iLog->LogError("XRenderWGPU: command encoder creation failed");
+		wgpuTextureViewRelease(g_backbufferView);
+		g_backbufferView = 0;
+		wgpuTextureRelease(g_backbuffer);
+		g_backbuffer = 0;
+		return;
+	}
 
 	// The clear happens here, as the pass's load operation, because that is the
 	// only place WebGPU allows it.
@@ -105,6 +126,14 @@ void CWGPURenderer::BeginFrame()
 	// one, and attaching a depth buffer nothing writes to would only cost
 	// bandwidth.
 	g_pass = wgpuCommandEncoderBeginRenderPass(g_encoder, &passDesc);
+	if (!g_pass)
+	{
+		// The encoder is deliberately kept: Update() still has to finish and
+		// release it, and it will simply submit a frame that draws nothing.
+		// Every draw checks g_pass, so nothing downstream dereferences null.
+		iLog->LogError("XRenderWGPU: render pass creation failed; "
+		               "this frame draws nothing");
+	}
 #endif
 }
 
@@ -125,9 +154,18 @@ void CWGPURenderer::Update()
 	memset(&cbDesc, 0, sizeof(cbDesc));
 	WGPUCommandBuffer commands = wgpuCommandEncoderFinish(g_encoder, &cbDesc);
 
-	wgpuQueueSubmit(WGPUContext_Queue(), 1, &commands);
+	if (commands)
+	{
+		wgpuQueueSubmit(WGPUContext_Queue(), 1, &commands);
+		wgpuCommandBufferRelease(commands);
+	}
+	else
+	{
+		// Nothing to present; the encoder is still released below so the next
+		// frame starts from a clean one rather than compounding the failure.
+		iLog->LogError("XRenderWGPU: command buffer finish failed");
+	}
 
-	wgpuCommandBufferRelease(commands);
 	wgpuCommandEncoderRelease(g_encoder);
 	g_encoder = 0;
 

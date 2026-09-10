@@ -52,18 +52,37 @@ const char* WGPUShaderGen_OpName(int nOp)
 }
 
 //////////////////////////////////////////////////////////////////////////
+//! The name of the local holding a stage's sampled texel.
+//!
+//! Per stage, not one shared name. Every stage's texel lives in the same
+//! function scope, so a single "texel" makes the second stage a redeclaration
+//! and the whole module fails to compile -- which is a runtime failure in the
+//! browser, long after this code has said the translation succeeded.
+//////////////////////////////////////////////////////////////////////////
+static std::string TexelName(int nStage)
+{
+	char buf[32];
+	snprintf(buf, sizeof(buf), "texel%d", nStage);
+	return buf;
+}
+
+//////////////////////////////////////////////////////////////////////////
 //! Where an argument's value comes from.
 //!
 //! eCA_Previous is the accumulator: the result of the stage before this one. On
 //! stage 0 there is nothing before, and the fixed-function pipeline defines it
 //! as the diffuse colour, which is what makes a lone eCO_MODULATE stage produce
 //! "texture times vertex colour" rather than "texture times nothing".
+//!
+//! eCA_Texture always resolves to THIS stage's texel. A stage without a texture
+//! still has one declared, holding white, so there is no case where the name is
+//! missing -- see the emit loop.
 //////////////////////////////////////////////////////////////////////////
-static const char* ArgExpr(int nArg, int nStage, bool bHasTexture)
+static std::string ArgExpr(int nArg, int nStage)
 {
 	switch (nArg)
 	{
-	case eCA_Texture:	return bHasTexture ? "texel" : "vec4f(1.0, 1.0, 1.0, 1.0)";
+	case eCA_Texture:	return TexelName(nStage);
 	case eCA_Diffuse:	return "diffuse";
 	case eCA_Previous:	return "acc";
 	case eCA_Constant:	return "uConst.color";
@@ -83,7 +102,7 @@ static const char* ArgExpr(int nArg, int nStage, bool bHasTexture)
 //! have. See the note in the header about not guessing.
 //////////////////////////////////////////////////////////////////////////
 static bool OpExpr(int nOp, const char* szA0, const char* szA1,
-                   std::string& sOut, std::string& sError)
+                   const char* szTexel, std::string& sOut, std::string& sError)
 {
 	char buf[512];
 
@@ -139,13 +158,13 @@ static bool OpExpr(int nOp, const char* szA0, const char* szA1,
 		break;
 
 	case eCO_BLENDTEXTUREALPHA:
-		snprintf(buf, sizeof(buf), "mix(%s, %s, texel.a)", szA1, szA0);
+		snprintf(buf, sizeof(buf), "mix(%s, %s, %s.a)", szA1, szA0, szTexel);
 		break;
 
 	// DECAL lays the texture over what came before, using the texture's own
 	// alpha as the coverage.
 	case eCO_DECAL:
-		snprintf(buf, sizeof(buf), "mix(acc, texel, texel.a)");
+		snprintf(buf, sizeof(buf), "mix(acc, %s, %s.a)", szTexel, szTexel);
 		break;
 
 	case eCO_LERP:
@@ -317,10 +336,13 @@ bool WGPUShaderGen_Build(const SWGPUShaderDesc& desc, std::string& sOut, std::st
 		char buf[256];
 		s += "\n";
 
+		const std::string sTexel = TexelName(i);
+
 		if (st.bHasTexture)
 		{
 			snprintf(buf, sizeof(buf),
-			         "  let texel = textureSample(tex%d, samp%d, in.uv);\n", i, i);
+			         "  let %s = textureSample(tex%d, samp%d, in.uv);\n",
+			         sTexel.c_str(), i, i);
 			s += buf;
 		}
 		else
@@ -328,14 +350,23 @@ bool WGPUShaderGen_Build(const SWGPUShaderDesc& desc, std::string& sOut, std::st
 			// A stage with no texture still runs its operation; anything
 			// reading eCA_Texture gets white, which is the identity for the
 			// multiplicative operations that dominate.
-			s += "  let texel = vec4f(1.0, 1.0, 1.0, 1.0);\n";
+			//
+			// It is declared rather than substituted inline so that every
+			// stage's texel has a name, including the ops that read it without
+			// naming it as an argument (DECAL, BLENDTEXTUREALPHA).
+			snprintf(buf, sizeof(buf),
+			         "  let %s = vec4f(1.0, 1.0, 1.0, 1.0);\n", sTexel.c_str());
+			s += buf;
 		}
 
 		std::string sColor, sAlpha;
 
-		if (!OpExpr(st.nColorOp,
-		            ArgExpr(WGPUShaderGen_Arg0(st.nColorArg), i, st.bHasTexture),
-		            ArgExpr(WGPUShaderGen_Arg1(st.nColorArg), i, st.bHasTexture),
+		const std::string sC0 = ArgExpr(WGPUShaderGen_Arg0(st.nColorArg), i);
+		const std::string sC1 = ArgExpr(WGPUShaderGen_Arg1(st.nColorArg), i);
+		const std::string sA0 = ArgExpr(WGPUShaderGen_Arg0(st.nAlphaArg), i);
+		const std::string sA1 = ArgExpr(WGPUShaderGen_Arg1(st.nAlphaArg), i);
+
+		if (!OpExpr(st.nColorOp, sC0.c_str(), sC1.c_str(), sTexel.c_str(),
 		            sColor, sError))
 		{
 			char err[256];
@@ -344,9 +375,7 @@ bool WGPUShaderGen_Build(const SWGPUShaderDesc& desc, std::string& sOut, std::st
 			return false;
 		}
 
-		if (!OpExpr(st.nAlphaOp,
-		            ArgExpr(WGPUShaderGen_Arg0(st.nAlphaArg), i, st.bHasTexture),
-		            ArgExpr(WGPUShaderGen_Arg1(st.nAlphaArg), i, st.bHasTexture),
+		if (!OpExpr(st.nAlphaOp, sA0.c_str(), sA1.c_str(), sTexel.c_str(),
 		            sAlpha, sError))
 		{
 			char err[256];

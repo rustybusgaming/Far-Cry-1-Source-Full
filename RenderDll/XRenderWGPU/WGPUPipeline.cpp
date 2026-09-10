@@ -225,7 +225,17 @@ static WGPURenderPipeline Build(const SWGPUPipelineDesc& desc)
 	bglDesc.entryCount = (size_t)nEntries;
 	bglDesc.entries    = entries;
 
+	// Every wgpuDeviceCreate* can return null -- WebGPU reports failure through
+	// the returned handle, there is no glGetError to ask afterwards. An
+	// unchecked null is passed straight into the next call and surfaces as a
+	// browser-side validation error naming a line that is not the cause.
 	WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bglDesc);
+	if (!bgl)
+	{
+		iLog->LogError("XRenderWGPU: bind group layout creation failed");
+		wgpuShaderModuleRelease(module);
+		return 0;
+	}
 
 	WGPUPipelineLayoutDescriptor plDesc;
 	memset(&plDesc, 0, sizeof(plDesc));
@@ -233,6 +243,13 @@ static WGPURenderPipeline Build(const SWGPUPipelineDesc& desc)
 	plDesc.bindGroupLayouts     = &bgl;
 
 	WGPUPipelineLayout layout = wgpuDeviceCreatePipelineLayout(device, &plDesc);
+	if (!layout)
+	{
+		iLog->LogError("XRenderWGPU: pipeline layout creation failed");
+		wgpuBindGroupLayoutRelease(bgl);
+		wgpuShaderModuleRelease(module);
+		return 0;
+	}
 
 	//////////////////////////////////////////////////////////////////////
 	// Vertex layout.

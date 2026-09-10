@@ -1043,9 +1043,9 @@ fn fs_main(in : VSOut) -> @location(0) vec4f {
   let specular = vec4f(0.0, 0.0, 0.0, 0.0);
   var acc = diffuse;
 
-  let texel = textureSample(tex0, samp0, in.uv);
-  let c0 = (texel * diffuse);
-  let a0 = (texel * diffuse);
+  let texel0 = textureSample(tex0, samp0, in.uv);
+  let c0 = (texel0 * diffuse);
+  let a0 = (texel0 * diffuse);
   acc = vec4f(c0.rgb, a0.a);
 
   return acc;
@@ -1070,6 +1070,28 @@ fn fs_main(in : VSOut) -> @location(0) vec4f {
 - **Colour and alpha are separate operations on the same stage**, computed into
   their own locals and recombined — exactly what the hardware did. Emitting them
   inline would write each expression twice, once for `.rgb` and once for `.a`.
+- **Every stage's texel is named for its stage** — `texel0`, `texel1` — because
+  they all live in the same function scope. The first version of the generator
+  used one shared `texel`, which made every pass with two or more stages a
+  redeclaration and therefore invalid WGSL. It got through review and through
+  the tests because the tests asserted that the right text *appeared*, and it
+  did: both stages sampled exactly the textures they should. See below.
+
+### What the tests assert, after getting this wrong
+
+The duplicate-`texel` bug is the reason `tests/test_shadergen.cpp` now checks
+the emitted code's **structure** and not only its contents:
+
+- **No identifier is declared twice within one scope.** This is the rule the
+  generator broke, and the one it can break again — it emits a flat run of
+  `let` bindings into a single function body, one group per stage.
+- **Every local the generator names is declared before it is used.** Restricted
+  to its own naming scheme (`texelN`, `cN`, `aN`), which is where an off-by-one
+  between the emit site and the argument resolver would surface.
+
+Neither is a WGSL parser, and neither pretends to be. They are the smallest
+rules that catch the mistakes actually available to this code, and both were
+confirmed to fail against the old generator before being kept.
 
 ### The cache key
 
