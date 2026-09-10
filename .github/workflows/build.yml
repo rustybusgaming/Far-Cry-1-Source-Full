@@ -122,12 +122,22 @@ jobs:
 
       # The browser build is the thing someone would actually want to try, and
       # it is awkward to produce without an Emscripten install.
+      #
+      # The server script and the README ship WITH it. Downloading the three
+      # files and double-clicking the HTML is the obvious thing to do and it
+      # fails -- a file:// page cannot fetch() its own .wasm -- with an error
+      # that reads like a broken build rather than a missing web server.
+      - name: Stage the artifact
+        run: |
+          mkdir -p artifact
+          cp build-wasm/Web/CryWeb.html build-wasm/Web/CryWeb.js \
+             build-wasm/Web/CryWeb.wasm artifact/
+          cp tools/serve_web.py artifact/
+          cp Web/ARTIFACT_README.txt artifact/README.txt
+
       - name: Upload the browser build
         uses: actions/upload-artifact@v4
         with:
           name: cryweb-wasm
-          path: |
-            build-wasm/Web/CryWeb.html
-            build-wasm/Web/CryWeb.js
-            build-wasm/Web/CryWeb.wasm
+          path: artifact/
           if-no-files-found: error

@@ -1177,6 +1177,34 @@ pipeline whose depth state does not match its render pass is invalid. The
 decoded depth state is already in the key, so this becomes correct as soon as a
 depth buffer exists.
 
+## Running the browser build
+
+**A `.wasm` cannot be opened from your filesystem.** Double-clicking
+`CryWeb.html` fails with an error that reads like a broken build:
+
+```
+Cross-Origin Request Blocked: ... CryWeb.wasm (Reason: CORS request not http)
+failed to asynchronously prepare wasm: both async and sync fetching failed
+```
+
+A `file://` page has an opaque origin, so the browser refuses the `fetch()` that
+loads the module. This is true of every Emscripten build. It has to be served:
+
+```bash
+python3 tools/serve_web.py            # serves build-wasm/Web
+python3 tools/serve_web.py .          # or an unzipped CI artifact
+```
+
+Then open `http://localhost:8000/CryWeb.html`. Any static file server does the
+same job; the script exists so there is a correct answer in the box, and because
+it sets the `application/wasm` content type that Python's own `http.server` does
+not always know — without it Emscripten falls back to a slower instantiation
+path and says so in the console.
+
+The CI artifact ships `serve_web.py` and a `README.txt` alongside the three
+build files, because downloading them and double-clicking the HTML is the
+obvious thing to do and the resulting error names the wrong culprit.
+
 ### Next
 
 Feeding real `SShaderPass` data through this, which needs the engine to reach a
