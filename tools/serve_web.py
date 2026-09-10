@@ -83,11 +83,13 @@ def main():
 			sys.exit("%s is missing from %s -- all three files must be "
 			         "together" % (name, root))
 
-	os.chdir(root)
+	# Avoid changing the process working directory; serve from `root` explicitly.
+	handler = lambda *a, **kw: Handler(*a, directory=root, **kw)
 
-	socketserver.TCPServer.allow_reuse_address = True
-	with socketserver.TCPServer(("127.0.0.1", args.port), Handler) as httpd:
-		print("serving %s" % root)
+	class ReuseTCPServer(socketserver.TCPServer):
+		allow_reuse_address = True
+
+	with ReuseTCPServer(("127.0.0.1", args.port), handler) as httpd:
 		print("open  http://localhost:%d/CryWeb.html" % args.port)
 		print("stop  Ctrl+C\n")
 		try:
