@@ -30,8 +30,8 @@ unsigned long long WGPUPipeline_Key(const SWGPUPipelineDesc& desc)
 
 	// Both sub-keys, so a change to either translator's inputs is reflected
 	// here without this function having to know their fields.
-	MIX(WGPUShaderGen_Key(desc.shader));
-	MIX(WGPUStateGen_Key(desc.state));
+	MIX(CryPass_Key(desc.shader));
+	MIX(CryStateGen_Key(desc.state));
 
 	// The vertex layout and the topology are baked into the pipeline too, so
 	// they are as much a part of its identity as the shader is.
@@ -63,35 +63,35 @@ static std::map<unsigned long long, WGPURenderPipeline> g_cache;
 
 //////////////////////////////////////////////////////////////////////////
 
-static WGPUBlendFactor ToBlendFactor(EWGPUBlendFactor e)
+static WGPUBlendFactor ToBlendFactor(ECryBlendFactor e)
 {
 	switch (e)
 	{
-	case eWGPUBlend_Zero:				return WGPUBlendFactor_Zero;
-	case eWGPUBlend_One:				return WGPUBlendFactor_One;
-	case eWGPUBlend_SrcColor:			return WGPUBlendFactor_Src;
-	case eWGPUBlend_OneMinusSrcColor:	return WGPUBlendFactor_OneMinusSrc;
-	case eWGPUBlend_DstColor:			return WGPUBlendFactor_Dst;
-	case eWGPUBlend_OneMinusDstColor:	return WGPUBlendFactor_OneMinusDst;
-	case eWGPUBlend_SrcAlpha:			return WGPUBlendFactor_SrcAlpha;
-	case eWGPUBlend_OneMinusSrcAlpha:	return WGPUBlendFactor_OneMinusSrcAlpha;
-	case eWGPUBlend_DstAlpha:			return WGPUBlendFactor_DstAlpha;
-	case eWGPUBlend_OneMinusDstAlpha:	return WGPUBlendFactor_OneMinusDstAlpha;
-	case eWGPUBlend_SrcAlphaSaturated:	return WGPUBlendFactor_SrcAlphaSaturated;
+	case eCryBlend_Zero:				return WGPUBlendFactor_Zero;
+	case eCryBlend_One:				return WGPUBlendFactor_One;
+	case eCryBlend_SrcColor:			return WGPUBlendFactor_Src;
+	case eCryBlend_OneMinusSrcColor:	return WGPUBlendFactor_OneMinusSrc;
+	case eCryBlend_DstColor:			return WGPUBlendFactor_Dst;
+	case eCryBlend_OneMinusDstColor:	return WGPUBlendFactor_OneMinusDst;
+	case eCryBlend_SrcAlpha:			return WGPUBlendFactor_SrcAlpha;
+	case eCryBlend_OneMinusSrcAlpha:	return WGPUBlendFactor_OneMinusSrcAlpha;
+	case eCryBlend_DstAlpha:			return WGPUBlendFactor_DstAlpha;
+	case eCryBlend_OneMinusDstAlpha:	return WGPUBlendFactor_OneMinusDstAlpha;
+	case eCryBlend_SrcAlphaSaturated:	return WGPUBlendFactor_SrcAlphaSaturated;
 	default:							return WGPUBlendFactor_One;
 	}
 }
 
-static WGPUCompareFunction ToCompare(EWGPUCompare e)
+static WGPUCompareFunction ToCompare(ECryCompare e)
 {
 	switch (e)
 	{
-	case eWGPUCompare_Never:		return WGPUCompareFunction_Never;
-	case eWGPUCompare_Less:			return WGPUCompareFunction_Less;
-	case eWGPUCompare_Equal:		return WGPUCompareFunction_Equal;
-	case eWGPUCompare_LessEqual:	return WGPUCompareFunction_LessEqual;
-	case eWGPUCompare_Greater:		return WGPUCompareFunction_Greater;
-	case eWGPUCompare_Always:		return WGPUCompareFunction_Always;
+	case eCryCompare_Never:		return WGPUCompareFunction_Never;
+	case eCryCompare_Less:			return WGPUCompareFunction_Less;
+	case eCryCompare_Equal:		return WGPUCompareFunction_Equal;
+	case eCryCompare_LessEqual:	return WGPUCompareFunction_LessEqual;
+	case eCryCompare_Greater:		return WGPUCompareFunction_Greater;
+	case eCryCompare_Always:		return WGPUCompareFunction_Always;
 	default:						return WGPUCompareFunction_LessEqual;
 	}
 }
@@ -191,7 +191,7 @@ static WGPURenderPipeline Build(const SWGPUPipelineDesc& desc)
 	// Bind group layout: the uniform buffer, then a sampler and texture per
 	// textured stage. Must match the bindings WGPUShaderGen emits.
 	//////////////////////////////////////////////////////////////////////
-	WGPUBindGroupLayoutEntry entries[1 + 2 * SWGPUShaderDesc::kMaxStages];
+	WGPUBindGroupLayoutEntry entries[1 + 2 * SCryPassDesc::kMaxStages];
 	memset(entries, 0, sizeof(entries));
 	int nEntries = 0;
 

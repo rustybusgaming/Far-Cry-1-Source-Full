@@ -32,10 +32,12 @@ add_test(NAME webinput COMMAND test_webinput)
 # in that backend touches the GPU and cannot be checked without one.
 add_executable(test_shadergen test_shadergen.cpp
                "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
-               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUStateGen.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp")
 cry_apply_common_settings(test_shadergen)
 target_include_directories(test_shadergen PRIVATE
-    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU"
+    "${PROJECT_SOURCE_DIR}/RenderDll/Common")
 target_link_libraries(test_shadergen PRIVATE CryCommon)
 
 add_test(NAME shadergen COMMAND test_shadergen)
@@ -45,10 +47,11 @@ add_test(NAME shadergen COMMAND test_shadergen)
 # of them negative flags, and one read backwards gives a scene that renders but
 # is subtly wrong.
 add_executable(test_stategen test_stategen.cpp
-               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUStateGen.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp")
 cry_apply_common_settings(test_stategen)
 target_include_directories(test_stategen PRIVATE
-    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
+    "${PROJECT_SOURCE_DIR}/RenderDll/Common")
 target_link_libraries(test_stategen PRIVATE CryCommon)
 
 add_test(NAME stategen COMMAND test_stategen)
@@ -60,10 +63,12 @@ add_test(NAME stategen COMMAND test_stategen)
 add_executable(test_pipelinekey test_pipelinekey.cpp
                "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUPipeline.cpp"
                "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
-               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUStateGen.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp")
 cry_apply_common_settings(test_pipelinekey)
 target_include_directories(test_pipelinekey PRIVATE
-    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU"
+    "${PROJECT_SOURCE_DIR}/RenderDll/Common")
 target_link_libraries(test_pipelinekey PRIVATE CryCommon)
 
 # Under Emscripten, WGPUPipeline.h reveals its device half and pulls in Dawn's

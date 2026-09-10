@@ -19,38 +19,6 @@
 
 //////////////////////////////////////////////////////////////////////////
 
-const char* WGPUShaderGen_OpName(int nOp)
-{
-	switch (nOp)
-	{
-	case eCO_NOSET:						return "eCO_NOSET";
-	case eCO_DISABLE:					return "eCO_DISABLE";
-	case eCO_REPLACE:					return "eCO_REPLACE";
-	case eCO_DECAL:						return "eCO_DECAL";
-	case eCO_ARG2:						return "eCO_ARG2";
-	case eCO_MODULATE:					return "eCO_MODULATE";
-	case eCO_MODULATE2X:				return "eCO_MODULATE2X";
-	case eCO_MODULATE4X:				return "eCO_MODULATE4X";
-	case eCO_BLENDDIFFUSEALPHA:			return "eCO_BLENDDIFFUSEALPHA";
-	case eCO_BLENDTEXTUREALPHA:			return "eCO_BLENDTEXTUREALPHA";
-	case eCO_DETAIL:					return "eCO_DETAIL";
-	case eCO_ADD:						return "eCO_ADD";
-	case eCO_ADDSIGNED:					return "eCO_ADDSIGNED";
-	case eCO_ADDSIGNED2X:				return "eCO_ADDSIGNED2X";
-	case eCO_MULTIPLYADD:				return "eCO_MULTIPLYADD";
-	case eCO_BUMPENVMAP:				return "eCO_BUMPENVMAP";
-	case eCO_BLEND:						return "eCO_BLEND";
-	case eCO_MODULATEALPHA_ADDCOLOR:	return "eCO_MODULATEALPHA_ADDCOLOR";
-	case eCO_MODULATECOLOR_ADDALPHA:	return "eCO_MODULATECOLOR_ADDALPHA";
-	case eCO_MODULATEINVALPHA_ADDCOLOR:	return "eCO_MODULATEINVALPHA_ADDCOLOR";
-	case eCO_MODULATEINVCOLOR_ADDALPHA:	return "eCO_MODULATEINVCOLOR_ADDALPHA";
-	case eCO_DOTPRODUCT3:				return "eCO_DOTPRODUCT3";
-	case eCO_LERP:						return "eCO_LERP";
-	case eCO_SUBTRACT:					return "eCO_SUBTRACT";
-	default:							return "eCO_<unknown>";
-	}
-}
-
 //////////////////////////////////////////////////////////////////////////
 //! The name of the local holding a stage's sampled texel.
 //!
@@ -231,7 +199,7 @@ static bool OpExpr(int nOp, const char* szA0, const char* szA1,
 	{
 		char err[128];
 		snprintf(err, sizeof(err), "unhandled colour operation %s (%d)",
-		         WGPUShaderGen_OpName(nOp), nOp);
+		         CryPass_OpName(nOp), nOp);
 		sError = err;
 		return false;
 	}
@@ -243,9 +211,9 @@ static bool OpExpr(int nOp, const char* szA0, const char* szA1,
 
 //////////////////////////////////////////////////////////////////////////
 
-bool WGPUShaderGen_Build(const SWGPUShaderDesc& desc, std::string& sOut, std::string& sError)
+bool WGPUShaderGen_Build(const SCryPassDesc& desc, std::string& sOut, std::string& sError)
 {
-	if (desc.nStages < 0 || desc.nStages > SWGPUShaderDesc::kMaxStages)
+	if (desc.nStages < 0 || desc.nStages > SCryPassDesc::kMaxStages)
 	{
 		sError = "stage count out of range";
 		return false;
@@ -328,7 +296,7 @@ bool WGPUShaderGen_Build(const SWGPUShaderDesc& desc, std::string& sOut, std::st
 
 	for (int i = 0; i < desc.nStages; ++i)
 	{
-		const SWGPUStageDesc& st = desc.stages[i];
+		const SCryStageDesc& st = desc.stages[i];
 
 		if (st.nColorOp == eCO_DISABLE || st.nColorOp == eCO_NOSET)
 			continue;
@@ -361,10 +329,10 @@ bool WGPUShaderGen_Build(const SWGPUShaderDesc& desc, std::string& sOut, std::st
 
 		std::string sColor, sAlpha;
 
-		const std::string sC0 = ArgExpr(WGPUShaderGen_Arg0(st.nColorArg), i);
-		const std::string sC1 = ArgExpr(WGPUShaderGen_Arg1(st.nColorArg), i);
-		const std::string sA0 = ArgExpr(WGPUShaderGen_Arg0(st.nAlphaArg), i);
-		const std::string sA1 = ArgExpr(WGPUShaderGen_Arg1(st.nAlphaArg), i);
+		const std::string sC0 = ArgExpr(CryPass_Arg0(st.nColorArg), i);
+		const std::string sC1 = ArgExpr(CryPass_Arg1(st.nColorArg), i);
+		const std::string sA0 = ArgExpr(CryPass_Arg0(st.nAlphaArg), i);
+		const std::string sA1 = ArgExpr(CryPass_Arg1(st.nAlphaArg), i);
 
 		if (!OpExpr(st.nColorOp, sC0.c_str(), sC1.c_str(), sTexel.c_str(),
 		            sColor, sError))
@@ -424,18 +392,18 @@ bool WGPUShaderGen_Build(const SWGPUShaderDesc& desc, std::string& sOut, std::st
 	// Alpha test, as a discard. The condition is the NEGATION of the keep test:
 	// the engine says which fragments survive, and a shader says which to throw
 	// away.
-	if (desc.nAlphaTest != eWGPUAlphaTest_None)
+	if (desc.nAlphaTest != eCryAlphaTest_None)
 	{
 		char buf[160];
 		switch (desc.nAlphaTest)
 		{
-		case eWGPUAlphaTest_Greater:
+		case eCryAlphaTest_Greater:
 			snprintf(buf, sizeof(buf), "\n  if (!(acc.a > %.6f)) { discard; }\n", desc.fAlphaRef);
 			break;
-		case eWGPUAlphaTest_GreaterEqual:
+		case eCryAlphaTest_GreaterEqual:
 			snprintf(buf, sizeof(buf), "\n  if (!(acc.a >= %.6f)) { discard; }\n", desc.fAlphaRef);
 			break;
-		case eWGPUAlphaTest_Less:
+		case eCryAlphaTest_Less:
 			snprintf(buf, sizeof(buf), "\n  if (!(acc.a < %.6f)) { discard; }\n", desc.fAlphaRef);
 			break;
 		default:
@@ -450,48 +418,4 @@ bool WGPUShaderGen_Build(const SWGPUShaderDesc& desc, std::string& sOut, std::st
 
 	sOut.swap(s);
 	return true;
-}
-
-//////////////////////////////////////////////////////////////////////////
-//! FNV-1a over everything that changes the emitted source.
-//!
-//! Deliberately built from the same fields the generator reads, so a field
-//! added to one without the other shows up as two passes sharing a pipeline
-//! they should not.
-//////////////////////////////////////////////////////////////////////////
-unsigned long long WGPUShaderGen_Key(const SWGPUShaderDesc& desc)
-{
-	unsigned long long h = 1469598103934665603ULL;
-
-	#define MIX(v) do { \
-		unsigned long long _v = (unsigned long long)(v); \
-		for (int _b = 0; _b < 8; ++_b) { \
-			h ^= (_v >> (_b * 8)) & 0xFF; \
-			h *= 1099511628211ULL; \
-		} \
-	} while (0)
-
-	MIX(desc.nStages);
-	MIX(desc.bHasVertexColor ? 1 : 0);
-	MIX(desc.bHasTexCoord ? 1 : 0);
-
-	// Both the direction and the threshold change the emitted source, so both
-	// are in the key rather than just the presence of a test.
-	MIX(desc.nAlphaTest);
-	int nAlphaBits = 0;
-	memcpy(&nAlphaBits, &desc.fAlphaRef, sizeof(nAlphaBits));
-	MIX(nAlphaBits);
-
-	for (int i = 0; i < desc.nStages && i < SWGPUShaderDesc::kMaxStages; ++i)
-	{
-		MIX(desc.stages[i].nColorOp);
-		MIX(desc.stages[i].nColorArg);
-		MIX(desc.stages[i].nAlphaOp);
-		MIX(desc.stages[i].nAlphaArg);
-		MIX(desc.stages[i].bHasTexture ? 1 : 0);
-	}
-
-	#undef MIX
-
-	return h;
 }

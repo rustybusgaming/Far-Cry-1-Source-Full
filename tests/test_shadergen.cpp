@@ -239,12 +239,12 @@ static void TestArgPacking()
 {
 	const int nPacked = DEF_TEXARG0;	// eCA_Texture | (eCA_Diffuse << 3)
 
-	CHECK(WGPUShaderGen_Arg0(nPacked) == eCA_Texture,  "DEF_TEXARG0 arg0 is the texture");
-	CHECK(WGPUShaderGen_Arg1(nPacked) == eCA_Diffuse,  "DEF_TEXARG0 arg1 is the diffuse colour");
+	CHECK(CryPass_Arg0(nPacked) == eCA_Texture,  "DEF_TEXARG0 arg0 is the texture");
+	CHECK(CryPass_Arg1(nPacked) == eCA_Diffuse,  "DEF_TEXARG0 arg1 is the diffuse colour");
 
 	const int nPacked1 = DEF_TEXARG1;	// eCA_Texture | (eCA_Previous << 3)
-	CHECK(WGPUShaderGen_Arg0(nPacked1) == eCA_Texture,  "DEF_TEXARG1 arg0 is the texture");
-	CHECK(WGPUShaderGen_Arg1(nPacked1) == eCA_Previous, "DEF_TEXARG1 arg1 is the previous stage");
+	CHECK(CryPass_Arg0(nPacked1) == eCA_Texture,  "DEF_TEXARG1 arg0 is the texture");
+	CHECK(CryPass_Arg1(nPacked1) == eCA_Previous, "DEF_TEXARG1 arg1 is the previous stage");
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -252,7 +252,7 @@ static void TestArgPacking()
 //////////////////////////////////////////////////////////////////////////
 static void TestSingleModulateStage()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 1;
 	desc.stages[0].bHasTexture = true;
 	desc.stages[0].nColorOp  = eCO_MODULATE;
@@ -289,7 +289,7 @@ static void TestSingleModulateStage()
 //////////////////////////////////////////////////////////////////////////
 static void TestPreviousStartsAsDiffuse()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 1;
 	desc.stages[0].bHasTexture = true;
 	desc.stages[0].nColorOp  = eCO_MODULATE;
@@ -309,7 +309,7 @@ static void TestPreviousStartsAsDiffuse()
 //////////////////////////////////////////////////////////////////////////
 static void TestTwoStagesChain()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 2;
 
 	desc.stages[0].bHasTexture = true;
@@ -356,7 +356,7 @@ static void TestUnsupportedOpsAreRejected()
 
 	for (int i = 0; i < 3; ++i)
 	{
-		SWGPUShaderDesc desc;
+		SCryPassDesc desc;
 		desc.nStages = 1;
 		desc.stages[0].bHasTexture = true;
 		desc.stages[0].nColorOp  = kUnsupported[i];
@@ -369,13 +369,13 @@ static void TestUnsupportedOpsAreRejected()
 
 		char what[160];
 		snprintf(what, sizeof(what), "%s is rejected rather than approximated",
-		         WGPUShaderGen_OpName(kUnsupported[i]));
+		         CryPass_OpName(kUnsupported[i]));
 		CHECK(!bBuilt, what);
 
 		// The error has to say which stage and which operation, or it is no
 		// use when a real shader fails to build.
 		snprintf(what, sizeof(what), "%s reports a useful reason",
-		         WGPUShaderGen_OpName(kUnsupported[i]));
+		         CryPass_OpName(kUnsupported[i]));
 		CHECK(!sError.empty() && sError.find("stage 0") != std::string::npos, what);
 	}
 }
@@ -385,7 +385,7 @@ static void TestUnsupportedOpsAreRejected()
 //////////////////////////////////////////////////////////////////////////
 static void TestDisabledStageSkipped()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 2;
 
 	desc.stages[0].bHasTexture = true;
@@ -408,7 +408,7 @@ static void TestDisabledStageSkipped()
 //////////////////////////////////////////////////////////////////////////
 static void TestAlphaTestBecomesDiscard()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 1;
 	desc.stages[0].bHasTexture = true;
 	desc.stages[0].nColorOp  = eCO_REPLACE;
@@ -420,7 +420,7 @@ static void TestAlphaTestBecomesDiscard()
 	CHECK(WGPUShaderGen_Build(desc, sNoTest, sError), "builds without an alpha test");
 	CHECK(!Has(sNoTest, "discard"), "no discard when no alpha test is asked for");
 
-	desc.nAlphaTest = eWGPUAlphaTest_GreaterEqual;
+	desc.nAlphaTest = eCryAlphaTest_GreaterEqual;
 	desc.fAlphaRef  = 0.5f;
 	CHECK(WGPUShaderGen_Build(desc, sWithTest, sError), "builds with an alpha test");
 	CHECK(Has(sWithTest, "discard"), "an alpha test emits a discard");
@@ -430,7 +430,7 @@ static void TestAlphaTestBecomesDiscard()
 	// the threshold; emitting the same comparison as the >= tests would invert
 	// every surface that uses it.
 	std::string sLess;
-	desc.nAlphaTest = eWGPUAlphaTest_Less;
+	desc.nAlphaTest = eCryAlphaTest_Less;
 	CHECK(WGPUShaderGen_Build(desc, sLess, sError), "builds a less-than alpha test");
 	CHECK(Has(sLess, "acc.a < 0.5"), "a less-than test emits a < comparison");
 	CHECK(!Has(sLess, "acc.a >= 0.5"), "a less-than test is not emitted as >=");
@@ -442,46 +442,46 @@ static void TestAlphaTestBecomesDiscard()
 //////////////////////////////////////////////////////////////////////////
 static void TestKeyDistinguishesDescriptions()
 {
-	SWGPUShaderDesc a;
+	SCryPassDesc a;
 	a.nStages = 1;
 	a.stages[0].bHasTexture = true;
 	a.stages[0].nColorOp  = eCO_MODULATE;
 	a.stages[0].nColorArg = DEF_TEXARG0;
 
-	SWGPUShaderDesc b = a;
-	CHECK(WGPUShaderGen_Key(a) == WGPUShaderGen_Key(b), "identical descriptions share a key");
+	SCryPassDesc b = a;
+	CHECK(CryPass_Key(a) == CryPass_Key(b), "identical descriptions share a key");
 
 	b.stages[0].nColorOp = eCO_ADD;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(b), "a different operation changes the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(b), "a different operation changes the key");
 
-	SWGPUShaderDesc c = a;
+	SCryPassDesc c = a;
 	c.stages[0].nColorArg = DEF_TEXARG1;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(c), "different arguments change the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(c), "different arguments change the key");
 
-	SWGPUShaderDesc d = a;
+	SCryPassDesc d = a;
 	d.nStages = 2;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(d), "a different stage count changes the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(d), "a different stage count changes the key");
 
-	SWGPUShaderDesc e = a;
-	e.nAlphaTest = eWGPUAlphaTest_GreaterEqual;
+	SCryPassDesc e = a;
+	e.nAlphaTest = eCryAlphaTest_GreaterEqual;
 	e.fAlphaRef  = 0.5f;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(e), "an alpha test changes the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(e), "an alpha test changes the key");
 
 	// Same threshold, opposite direction: different shader, so different key.
-	SWGPUShaderDesc eLess = e;
-	eLess.nAlphaTest = eWGPUAlphaTest_Less;
-	CHECK(WGPUShaderGen_Key(e) != WGPUShaderGen_Key(eLess),
+	SCryPassDesc eLess = e;
+	eLess.nAlphaTest = eCryAlphaTest_Less;
+	CHECK(CryPass_Key(e) != CryPass_Key(eLess),
 	      "the alpha test direction changes the key");
 
-	SWGPUShaderDesc f = a;
+	SCryPassDesc f = a;
 	f.stages[0].bHasTexture = false;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(f), "losing the texture changes the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(f), "losing the texture changes the key");
 
 	// The threshold is part of the emitted source, so two different thresholds
 	// cannot share a pipeline either.
-	SWGPUShaderDesc g = e;
+	SCryPassDesc g = e;
 	g.fAlphaRef = 0.25f;
-	CHECK(WGPUShaderGen_Key(e) != WGPUShaderGen_Key(g),
+	CHECK(CryPass_Key(e) != CryPass_Key(g),
 	      "a different alpha threshold changes the key");
 }
 
@@ -491,7 +491,7 @@ static void TestKeyDistinguishesDescriptions()
 //////////////////////////////////////////////////////////////////////////
 static void TestUntexturedStage()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 1;
 	desc.stages[0].bHasTexture = false;
 	desc.stages[0].nColorOp  = eCO_MODULATE;

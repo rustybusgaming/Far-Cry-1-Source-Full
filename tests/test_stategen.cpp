@@ -17,7 +17,7 @@
 #include <platform.h>
 #include <IRenderer.h>
 
-#include "WGPUStateGen.h"
+#include "CryStateGen.h"
 
 #include <stdio.h>
 
@@ -38,23 +38,23 @@ static int g_nFailures = 0;
 //////////////////////////////////////////////////////////////////////////
 static void TestBlendAbsenceIsNotZeroFactor()
 {
-	SWGPUStateDesc st;
+	SCryStateDesc st;
 
-	WGPUStateGen_Decode(0, st);
+	CryStateGen_Decode(0, st);
 	CHECK(!st.bBlendEnabled, "a state with no blend nibbles does not blend");
 
 	// Only one side named: still not a blend.
-	WGPUStateGen_Decode(GS_BLSRC_SRCALPHA, st);
+	CryStateGen_Decode(GS_BLSRC_SRCALPHA, st);
 	CHECK(!st.bBlendEnabled, "a source factor alone does not enable blending");
 
-	WGPUStateGen_Decode(GS_BLDST_ONEMINUSSRCALPHA, st);
+	CryStateGen_Decode(GS_BLDST_ONEMINUSSRCALPHA, st);
 	CHECK(!st.bBlendEnabled, "a destination factor alone does not enable blending");
 
 	// And the real ZERO factor is a factor.
-	WGPUStateGen_Decode(GS_BLSRC_ZERO | GS_BLDST_ONE, st);
+	CryStateGen_Decode(GS_BLSRC_ZERO | GS_BLDST_ONE, st);
 	CHECK(st.bBlendEnabled, "GS_BLSRC_ZERO is a factor and does enable blending");
-	CHECK(st.eSrcFactor == eWGPUBlend_Zero, "GS_BLSRC_ZERO decodes to the zero factor");
-	CHECK(st.eDstFactor == eWGPUBlend_One,  "GS_BLDST_ONE decodes to the one factor");
+	CHECK(st.eSrcFactor == eCryBlend_Zero, "GS_BLSRC_ZERO decodes to the zero factor");
+	CHECK(st.eDstFactor == eCryBlend_One,  "GS_BLDST_ONE decodes to the one factor");
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -62,12 +62,12 @@ static void TestBlendAbsenceIsNotZeroFactor()
 //////////////////////////////////////////////////////////////////////////
 static void TestAlphaBlend()
 {
-	SWGPUStateDesc st;
-	WGPUStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA, st);
+	SCryStateDesc st;
+	CryStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA, st);
 
 	CHECK(st.bBlendEnabled, "src-alpha / one-minus-src-alpha blends");
-	CHECK(st.eSrcFactor == eWGPUBlend_SrcAlpha, "source is src alpha");
-	CHECK(st.eDstFactor == eWGPUBlend_OneMinusSrcAlpha, "destination is one minus src alpha");
+	CHECK(st.eSrcFactor == eCryBlend_SrcAlpha, "source is src alpha");
+	CHECK(st.eDstFactor == eCryBlend_OneMinusSrcAlpha, "destination is one minus src alpha");
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -75,12 +75,12 @@ static void TestAlphaBlend()
 //////////////////////////////////////////////////////////////////////////
 static void TestAdditiveBlend()
 {
-	SWGPUStateDesc st;
-	WGPUStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, st);
+	SCryStateDesc st;
+	CryStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, st);
 
 	CHECK(st.bBlendEnabled, "one / one blends");
-	CHECK(st.eSrcFactor == eWGPUBlend_One, "additive source factor");
-	CHECK(st.eDstFactor == eWGPUBlend_One, "additive destination factor");
+	CHECK(st.eSrcFactor == eCryBlend_One, "additive source factor");
+	CHECK(st.eDstFactor == eCryBlend_One, "additive destination factor");
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -90,28 +90,28 @@ static void TestAdditiveBlend()
 //////////////////////////////////////////////////////////////////////////
 static void TestDepth()
 {
-	SWGPUStateDesc st;
+	SCryStateDesc st;
 
-	WGPUStateGen_Decode(0, st);
+	CryStateGen_Decode(0, st);
 	CHECK(st.bDepthTest, "depth testing is on by default");
 	CHECK(!st.bDepthWrite, "depth writing is off unless asked for");
-	CHECK(st.eDepthCompare == eWGPUCompare_LessEqual, "the default comparison is less-or-equal");
+	CHECK(st.eDepthCompare == eCryCompare_LessEqual, "the default comparison is less-or-equal");
 
-	WGPUStateGen_Decode(GS_DEPTHWRITE, st);
+	CryStateGen_Decode(GS_DEPTHWRITE, st);
 	CHECK(st.bDepthWrite, "GS_DEPTHWRITE turns depth writing on");
 
-	WGPUStateGen_Decode(GS_NODEPTHTEST, st);
+	CryStateGen_Decode(GS_NODEPTHTEST, st);
 	CHECK(!st.bDepthTest, "GS_NODEPTHTEST turns depth testing off");
 	// WebGPU cannot disable the test; the equivalent is a comparison that
 	// always passes.
-	CHECK(st.eDepthCompare == eWGPUCompare_Always,
+	CHECK(st.eDepthCompare == eCryCompare_Always,
 	      "a disabled depth test becomes an always-pass comparison");
 
-	WGPUStateGen_Decode(GS_DEPTHFUNC_EQUAL, st);
-	CHECK(st.eDepthCompare == eWGPUCompare_Equal, "GS_DEPTHFUNC_EQUAL decodes");
+	CryStateGen_Decode(GS_DEPTHFUNC_EQUAL, st);
+	CHECK(st.eDepthCompare == eCryCompare_Equal, "GS_DEPTHFUNC_EQUAL decodes");
 
-	WGPUStateGen_Decode(GS_DEPTHFUNC_GREAT, st);
-	CHECK(st.eDepthCompare == eWGPUCompare_Greater, "GS_DEPTHFUNC_GREAT decodes");
+	CryStateGen_Decode(GS_DEPTHFUNC_GREAT, st);
+	CHECK(st.eDepthCompare == eCryCompare_Greater, "GS_DEPTHFUNC_GREAT decodes");
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -119,18 +119,18 @@ static void TestDepth()
 //////////////////////////////////////////////////////////////////////////
 static void TestColorMask()
 {
-	SWGPUStateDesc st;
+	SCryStateDesc st;
 
-	WGPUStateGen_Decode(0, st);
+	CryStateGen_Decode(0, st);
 	CHECK(st.nColorWriteMask == (1 | 2 | 4 | 8), "everything is written by default");
 
-	WGPUStateGen_Decode(GS_NOCOLMASK, st);
+	CryStateGen_Decode(GS_NOCOLMASK, st);
 	CHECK(st.nColorWriteMask == 0, "GS_NOCOLMASK writes nothing");
 
-	WGPUStateGen_Decode(GS_COLMASKONLYALPHA, st);
+	CryStateGen_Decode(GS_COLMASKONLYALPHA, st);
 	CHECK(st.nColorWriteMask == 8, "GS_COLMASKONLYALPHA writes alpha only");
 
-	WGPUStateGen_Decode(GS_COLMASKONLYRGB, st);
+	CryStateGen_Decode(GS_COLMASKONLYRGB, st);
 	CHECK(st.nColorWriteMask == (1 | 2 | 4), "GS_COLMASKONLYRGB writes colour only");
 }
 
@@ -143,25 +143,25 @@ static void TestColorMask()
 //////////////////////////////////////////////////////////////////////////
 static void TestAlphaTest()
 {
-	SWGPUStateDesc st;
+	SCryStateDesc st;
 
-	WGPUStateGen_Decode(0, st);
-	CHECK(st.eAlphaTest == eWGPUAlphaTest_None, "no alpha test by default");
+	CryStateGen_Decode(0, st);
+	CHECK(st.eAlphaTest == eCryAlphaTest_None, "no alpha test by default");
 
-	WGPUStateGen_Decode(GS_ALPHATEST_GREATER0, st);
-	CHECK(st.eAlphaTest == eWGPUAlphaTest_Greater, "GREATER0 keeps anything above zero");
+	CryStateGen_Decode(GS_ALPHATEST_GREATER0, st);
+	CHECK(st.eAlphaTest == eCryAlphaTest_Greater, "GREATER0 keeps anything above zero");
 	CHECK(st.fAlphaRef == 0.0f, "GREATER0 has a zero reference");
 
-	WGPUStateGen_Decode(GS_ALPHATEST_GEQUAL128, st);
-	CHECK(st.eAlphaTest == eWGPUAlphaTest_GreaterEqual, "GEQUAL128 is a >= test");
+	CryStateGen_Decode(GS_ALPHATEST_GEQUAL128, st);
+	CHECK(st.eAlphaTest == eCryAlphaTest_GreaterEqual, "GEQUAL128 is a >= test");
 	CHECK(st.fAlphaRef > 0.50f && st.fAlphaRef < 0.51f, "GEQUAL128 references 128/255");
 
-	WGPUStateGen_Decode(GS_ALPHATEST_GEQUAL64, st);
-	CHECK(st.eAlphaTest == eWGPUAlphaTest_GreaterEqual, "GEQUAL64 is a >= test");
+	CryStateGen_Decode(GS_ALPHATEST_GEQUAL64, st);
+	CHECK(st.eAlphaTest == eCryAlphaTest_GreaterEqual, "GEQUAL64 is a >= test");
 	CHECK(st.fAlphaRef > 0.25f && st.fAlphaRef < 0.26f, "GEQUAL64 references 64/255");
 
-	WGPUStateGen_Decode(GS_ALPHATEST_LESS128, st);
-	CHECK(st.eAlphaTest == eWGPUAlphaTest_Less, "LESS128 is a LESS-than test, not a >=");
+	CryStateGen_Decode(GS_ALPHATEST_LESS128, st);
+	CHECK(st.eAlphaTest == eCryAlphaTest_Less, "LESS128 is a LESS-than test, not a >=");
 	CHECK(st.fAlphaRef > 0.50f && st.fAlphaRef < 0.51f, "LESS128 references 128/255");
 }
 
@@ -170,20 +170,20 @@ static void TestAlphaTest()
 //////////////////////////////////////////////////////////////////////////
 static void TestCombined()
 {
-	SWGPUStateDesc st;
+	SCryStateDesc st;
 
 	// A typical foliage pass: alpha tested, depth written, no blending.
-	WGPUStateGen_Decode(GS_DEPTHWRITE | GS_ALPHATEST_GEQUAL128, st);
+	CryStateGen_Decode(GS_DEPTHWRITE | GS_ALPHATEST_GEQUAL128, st);
 	CHECK(!st.bBlendEnabled, "an alpha-tested pass need not blend");
 	CHECK(st.bDepthWrite, "and still writes depth");
-	CHECK(st.eAlphaTest == eWGPUAlphaTest_GreaterEqual, "and still tests alpha");
+	CHECK(st.eAlphaTest == eCryAlphaTest_GreaterEqual, "and still tests alpha");
 
 	// A typical particle pass: additive, depth tested but not written.
-	WGPUStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, st);
+	CryStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, st);
 	CHECK(st.bBlendEnabled && !st.bDepthWrite,
 	      "an additive pass blends without writing depth");
 
-	WGPUStateGen_Decode(GS_STENCIL, st);
+	CryStateGen_Decode(GS_STENCIL, st);
 	CHECK(st.bStencil, "GS_STENCIL is carried through");
 }
 
@@ -193,32 +193,32 @@ static void TestCombined()
 //////////////////////////////////////////////////////////////////////////
 static void TestKey()
 {
-	SWGPUStateDesc a, b;
+	SCryStateDesc a, b;
 
-	WGPUStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA, a);
-	WGPUStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA, b);
-	CHECK(WGPUStateGen_Key(a) == WGPUStateGen_Key(b), "the same state gives the same key");
+	CryStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA, a);
+	CryStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA, b);
+	CHECK(CryStateGen_Key(a) == CryStateGen_Key(b), "the same state gives the same key");
 
-	WGPUStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, b);
-	CHECK(WGPUStateGen_Key(a) != WGPUStateGen_Key(b), "different blending changes the key");
+	CryStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, b);
+	CHECK(CryStateGen_Key(a) != CryStateGen_Key(b), "different blending changes the key");
 
-	WGPUStateGen_Decode(GS_DEPTHWRITE, a);
-	WGPUStateGen_Decode(0, b);
-	CHECK(WGPUStateGen_Key(a) != WGPUStateGen_Key(b), "depth writing changes the key");
+	CryStateGen_Decode(GS_DEPTHWRITE, a);
+	CryStateGen_Decode(0, b);
+	CHECK(CryStateGen_Key(a) != CryStateGen_Key(b), "depth writing changes the key");
 
-	WGPUStateGen_Decode(GS_ALPHATEST_GEQUAL128, a);
-	WGPUStateGen_Decode(GS_ALPHATEST_GEQUAL64, b);
-	CHECK(WGPUStateGen_Key(a) != WGPUStateGen_Key(b),
+	CryStateGen_Decode(GS_ALPHATEST_GEQUAL128, a);
+	CryStateGen_Decode(GS_ALPHATEST_GEQUAL64, b);
+	CHECK(CryStateGen_Key(a) != CryStateGen_Key(b),
 	      "a different alpha reference changes the key");
 
-	WGPUStateGen_Decode(GS_ALPHATEST_GEQUAL128, a);
-	WGPUStateGen_Decode(GS_ALPHATEST_LESS128, b);
-	CHECK(WGPUStateGen_Key(a) != WGPUStateGen_Key(b),
+	CryStateGen_Decode(GS_ALPHATEST_GEQUAL128, a);
+	CryStateGen_Decode(GS_ALPHATEST_LESS128, b);
+	CHECK(CryStateGen_Key(a) != CryStateGen_Key(b),
 	      "the same reference with the opposite direction changes the key");
 
-	WGPUStateGen_Decode(GS_NOCOLMASK, a);
-	WGPUStateGen_Decode(0, b);
-	CHECK(WGPUStateGen_Key(a) != WGPUStateGen_Key(b), "colour masking changes the key");
+	CryStateGen_Decode(GS_NOCOLMASK, a);
+	CryStateGen_Decode(0, b);
+	CHECK(CryStateGen_Key(a) != CryStateGen_Key(b), "colour masking changes the key");
 }
 
 int main()
