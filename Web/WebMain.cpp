@@ -306,10 +306,14 @@ static void PublishPixelSample(IRenderer* pRenderer)
 //! finish the frame. ISystem::Update returns false when the engine wants to
 //! quit.
 //!
-//! Nothing draws geometry yet, so what reaches the canvas is the clear.
-//! That is not a placeholder for the loop's sake -- it is the honest state of
-//! the renderer, and it is visible proof that the loop, the context and the
-//! present path all work, which is what this milestone is for.
+//! What reaches the canvas is the clear plus the three quads DrawProofOfLife
+//! puts there, each through a different route into the renderer. They are not
+//! decoration: between them they exercise dynamic geometry, texture upload and
+//! sampling, and a static vertex buffer that has to survive across frames, and
+//! their colours are what the browser tests read back and assert.
+//!
+//! (This comment used to say nothing drew geometry yet. It did, until the
+//! quads landed a milestone later.)
 //////////////////////////////////////////////////////////////////////////
 static void WebFrame(void*)
 {
