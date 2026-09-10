@@ -238,7 +238,13 @@ void CGLESRenderer::DrawDynamic(const struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F* pVe
 	if (!GLESContext_IsCreated() || !EnsureDynamicBuffers())
 		return;
 
-	const SGLESProgram* pProgram = GLESShader_GetDynamic();
+	// Whether a texture is bound decides WHICH program, not a uniform inside
+	// one, so it has to be known before the lookup. The two cases are two
+	// descriptions and two generated shaders; see GLESShader_DynamicPass.
+	const bool bTextured = GLESTexture_IsBound();
+
+	const SGLESProgram* pProgram =
+		GLESShader_GetForPass(GLESShader_DynamicPass(bTextured));
 	if (!pProgram)
 		return;
 
@@ -366,14 +372,15 @@ void CGLESRenderer::DrawDynamic(const struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F* pVe
 	if (pProgram->nMVP >= 0)
 		glUniformMatrix4fv(pProgram->nMVP, 1, GL_FALSE, m_matMVP);
 
-	// Sample only if something is bound. The shader multiplies the texture by
-	// the vertex colour, so an untextured draw is not a special case -- it is
-	// the same program with the sampler switched off.
-	const bool bTextured = GLESTexture_IsBound();
-	if (pProgram->nUseTexture >= 0)
-		glUniform1i(pProgram->nUseTexture, bTextured ? 1 : 0);
-	if (bTextured && pProgram->nSampler >= 0)
-		glUniform1i(pProgram->nSampler, 0);	// texture unit 0
+	// Point each stage's sampler at its texture unit. Only stage 0 is ever
+	// bound today -- the engine's multi-texture paths do not reach here yet --
+	// but the loop is over the program's stages so that adding one does not
+	// need this code changed as well.
+	for (int nStage = 0; nStage < pProgram->nStages; ++nStage)
+	{
+		if (pProgram->nSamplers[nStage] >= 0)
+			glUniform1i(pProgram->nSamplers[nStage], nStage);
+	}
 
 	if (m_b2DMode)
 	{

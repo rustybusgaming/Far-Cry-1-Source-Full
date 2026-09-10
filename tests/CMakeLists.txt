@@ -190,7 +190,13 @@ if(EMSCRIPTEN)
                          # CreateIndexBuffer, DrawBuffer -- the route world
                          # geometry takes, with attributes bound from the
                          # engine's own vertex-format tables.
-                         --expect-static 96,176,48)
+                         --expect-static 96,176,48
+                         # Generated GLSL, compiled by the real driver, drawn
+                         # and read back. See RenderDll/XRenderGLES/
+                         # GLESConform.cpp -- it covers the multi-stage case
+                         # that the WGSL generator got wrong and that no
+                         # assertion about emitted text could have caught.
+                         --expect-shader-conformance)
         set_tests_properties(web_host_frames PROPERTIES TIMEOUT 300)
     endif()
 endif()

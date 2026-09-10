@@ -75,6 +75,13 @@ def main():
     want_tex    = rgb_arg("--expect-textured")
     want_static = rgb_arg("--expect-static")
 
+    # The shader conformance run: generated GLSL compiled by the real driver,
+    # drawn, and read back. This is the only check in the suite that proves a
+    # generated shader COMPILES rather than merely reads correctly, so a run
+    # that reports fewer passes than cases is a failure even when every pixel
+    # assertion above is satisfied.
+    want_conformance = "--expect-shader-conformance" in sys.argv
+
     page = os.path.abspath(sys.argv[1])
     directory = os.path.dirname(page)
     name = os.path.basename(page)
@@ -163,6 +170,21 @@ def main():
                         ok = all(abs(a - b) <= 1 for a, b in zip(got, want))
                         print("%-6s pixel %s (wanted %s) %s"
                               % (name, got, want, "ok" if ok else "MISMATCH"))
+                        if not ok:
+                            failures += 1
+
+                    if want_conformance:
+                        pg.wait_for_function(
+                            "window.__cryConformTotal !== undefined", timeout=60000)
+                        nPassed = pg.evaluate("window.__cryConformPassed")
+                        nTotal  = pg.evaluate("window.__cryConformTotal")
+
+                        # Zero cases is not a pass. A run that built no cases at
+                        # all -- no context, no framebuffer -- would otherwise
+                        # report 0 of 0 and read as success.
+                        ok = nTotal > 0 and nPassed == nTotal
+                        print("shader conformance %d/%d %s"
+                              % (nPassed, nTotal, "ok" if ok else "FAILED"))
                         if not ok:
                             failures += 1
             else:

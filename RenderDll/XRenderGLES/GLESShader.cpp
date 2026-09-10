@@ -12,58 +12,16 @@
 
 #if defined(__EMSCRIPTEN__)
 
+#include "GLESShaderGen.h"
+
 #include <stdio.h>
 #include <string.h>
+#include <map>
+#include <string>
 
-//////////////////////////////////////////////////////////////////////////
-//! The program for the engine's generic dynamic vertex format.
-//!
-//! Two details are not arbitrary:
-//!
-//!   The colour is swizzled .bgra. The engine packs UCol as B,G,R,A when
-//!   gbRgb is false, which is what every backend in this tree sets -- it is
-//!   the Direct3D byte order, and the GL backends asked the driver for
-//!   GL_BGRA to compensate. GLES 3.0 has no BGRA vertex format, so the bytes
-//!   are read in their natural order and reordered here instead. Doing it in
-//!   the shader costs nothing; doing it on the CPU would mean touching every
-//!   vertex.
-//!
-//!   uUseTexture is an int rather than a bool. GLSL ES bool uniforms are set
-//!   with glUniform1i anyway, and keeping the type as int avoids a class of
-//!   mistake where a driver disagrees about the encoding of true.
-//////////////////////////////////////////////////////////////////////////
-static const char* g_szDynamicVS =
-	"#version 300 es\n"
-	"uniform mat4 uMVP;\n"
-	"layout(location = 0) in vec3 aPosition;\n"
-	"layout(location = 1) in vec4 aColor;\n"
-	"layout(location = 2) in vec2 aTexCoord;\n"
-	"out vec4 vColor;\n"
-	"out vec2 vTexCoord;\n"
-	"void main()\n"
-	"{\n"
-	"    vColor = aColor.bgra;\n"
-	"    vTexCoord = aTexCoord;\n"
-	"    gl_Position = uMVP * vec4(aPosition, 1.0);\n"
-	"}\n";
-
-static const char* g_szDynamicFS =
-	"#version 300 es\n"
-	"precision mediump float;\n"
-	"uniform sampler2D uTexture;\n"
-	"uniform int uUseTexture;\n"
-	"in vec4 vColor;\n"
-	"in vec2 vTexCoord;\n"
-	"out vec4 oColor;\n"
-	"void main()\n"
-	"{\n"
-	"    oColor = (uUseTexture != 0)\n"
-	"           ? texture(uTexture, vTexCoord) * vColor\n"
-	"           : vColor;\n"
-	"}\n";
-
-static SGLESProgram	g_dynamic = { 0, -1, -1, -1 };
-static bool			g_bDynamicTried = false;
+//! Programs by pass key. A null program means "this description was tried and
+//! failed" -- kept so a pass that cannot build is not retranslated every frame.
+static std::map<unsigned long long, SGLESProgram> g_cache;
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -100,8 +58,13 @@ static GLuint CompileStage(GLenum eType, const char* szSource)
 SGLESProgram GLESShader_Build(const char* szVertexSrc, const char* szFragmentSrc)
 {
 	SGLESProgram out;
-	out.nProgram = 0;
-	out.nMVP = out.nSampler = out.nUseTexture = -1;
+	memset(&out, 0, sizeof(out));
+	out.nProgram    = 0;
+	out.nMVP        = -1;
+	out.nConstColor = -1;
+	out.nStages     = 0;
+	for (int i = 0; i < SCryPassDesc::kMaxStages; ++i)
+		out.nSamplers[i] = -1;
 
 	GLuint nVS = CompileStage(GL_VERTEX_SHADER, szVertexSrc);
 	if (!nVS)
@@ -151,8 +114,7 @@ SGLESProgram GLESShader_Build(const char* szVertexSrc, const char* szFragmentSrc
 
 	out.nProgram    = nProgram;
 	out.nMVP        = glGetUniformLocation(nProgram, "uMVP");
-	out.nSampler    = glGetUniformLocation(nProgram, "uTexture");
-	out.nUseTexture = glGetUniformLocation(nProgram, "uUseTexture");
+	out.nConstColor = glGetUniformLocation(nProgram, "uConstColor");
 
 	return out;
 }
@@ -162,34 +124,136 @@ void GLESShader_Destroy(SGLESProgram& program)
 	if (program.nProgram)
 		glDeleteProgram(program.nProgram);
 
-	program.nProgram = 0;
-	program.nMVP = program.nSampler = program.nUseTexture = -1;
+	program.nProgram    = 0;
+	program.nMVP        = -1;
+	program.nConstColor = -1;
+	program.nStages     = 0;
+	for (int i = 0; i < SCryPassDesc::kMaxStages; ++i)
+		program.nSamplers[i] = -1;
 }
 
-const SGLESProgram* GLESShader_GetDynamic()
+//////////////////////////////////////////////////////////////////////////
+//! Log a shader the driver rejected, with line numbers.
+//!
+//! The generated source exists nowhere on disk, so a driver error naming
+//! "line 24" is unusable on its own. Printing it numbered is the difference
+//! between a fixable report and a dead end -- and this is the only place the
+//! source can still be seen, since it is discarded once the program links.
+//////////////////////////////////////////////////////////////////////////
+static void LogSource(const char* szWhich, const std::string& sSource)
 {
-	if (!g_bDynamicTried)
-	{
-		g_bDynamicTried = true;
-		g_dynamic = GLESShader_Build(g_szDynamicVS, g_szDynamicFS);
+	iLog->LogError("XRenderGLES: generated %s source was:", szWhich);
 
-		if (g_dynamic.IsValid())
-			iLog->Log("XRenderGLES: dynamic-vertex program built");
-		else
-			iLog->LogError("XRenderGLES: dynamic-vertex program unavailable; "
-			               "nothing will be drawn");
+	int nLine = 1;
+	size_t nStart = 0;
+	while (nStart <= sSource.size())
+	{
+		const size_t nEnd = sSource.find('\n', nStart);
+		const std::string sLine = sSource.substr(
+			nStart, nEnd == std::string::npos ? std::string::npos : nEnd - nStart);
+
+		iLog->LogError("  %3d | %s", nLine++, sLine.c_str());
+
+		if (nEnd == std::string::npos)
+			break;
+		nStart = nEnd + 1;
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+SCryPassDesc GLESShader_DynamicPass(bool bTextured)
+{
+	SCryPassDesc desc;
+	desc.nStages = 1;
+
+	desc.stages[0].bHasTexture = bTextured;
+
+	// eCO_MODULATE with DEF_TEXARG0 is "texture times diffuse" -- the
+	// fixed-function default, and what every DrawDynVB caller in the engine
+	// expects. Without a texture the stage's texel reads as white and the
+	// same expression collapses to the vertex colour, which is exactly what
+	// the old hand-written program's untextured branch did.
+	desc.stages[0].nColorOp  = eCO_MODULATE;
+	desc.stages[0].nColorArg = DEF_TEXARG0;
+	desc.stages[0].nAlphaOp  = eCO_MODULATE;
+	desc.stages[0].nAlphaArg = DEF_TEXARG0;
+
+	desc.bHasVertexColor = true;
+	desc.bHasTexCoord    = true;
+
+	return desc;
+}
+
+const SGLESProgram* GLESShader_GetForPass(const SCryPassDesc& desc)
+{
+	const unsigned long long nKey = CryPass_Key(desc);
+
+	std::map<unsigned long long, SGLESProgram>::iterator it = g_cache.find(nKey);
+	if (it != g_cache.end())
+		return it->second.IsValid() ? &it->second : 0;
+
+	SGLESProgram program;
+	memset(&program, 0, sizeof(program));
+	program.nProgram = 0;
+
+	std::string sVS, sFS, sError;
+	if (!GLESShaderGen_Build(desc, sVS, sFS, sError))
+	{
+		iLog->LogError("XRenderGLES: cannot translate pass: %s", sError.c_str());
+
+		// Cached as a failure. Retranslating an impossible pass once per draw
+		// would turn a rendering bug into a frame-rate one and bury the log.
+		g_cache[nKey] = program;
+		return 0;
 	}
 
-	return g_dynamic.IsValid() ? &g_dynamic : 0;
+	program = GLESShader_Build(sVS.c_str(), sFS.c_str());
+
+	if (!program.IsValid())
+	{
+		LogSource("vertex", sVS);
+		LogSource("fragment", sFS);
+		g_cache[nKey] = program;
+		return 0;
+	}
+
+	// The sampler locations, by the names the generator emitted. Both come
+	// from GLESShaderGen_SamplerName so they cannot disagree.
+	program.nStages = desc.nStages;
+	for (int i = 0; i < desc.nStages && i < SCryPassDesc::kMaxStages; ++i)
+	{
+		if (!desc.stages[i].bHasTexture)
+			continue;
+
+		program.nSamplers[i] = glGetUniformLocation(
+			program.nProgram, GLESShaderGen_SamplerName(i).c_str());
+	}
+
+	g_cache[nKey] = program;
+
+	iLog->Log("XRenderGLES: built program for a %d-stage pass (%d cached)",
+	          desc.nStages, (int)g_cache.size());
+
+	return &g_cache[nKey];
+}
+
+int GLESShader_CacheSize()
+{
+	return (int)g_cache.size();
 }
 
 void GLESShader_Shutdown()
 {
-	GLESShader_Destroy(g_dynamic);
+	for (std::map<unsigned long long, SGLESProgram>::iterator it = g_cache.begin();
+	     it != g_cache.end(); ++it)
+	{
+		GLESShader_Destroy(it->second);
+	}
 
-	// Cleared so a program is rebuilt if the renderer comes back up -- after a
-	// context loss the old name means nothing.
-	g_bDynamicTried = false;
+	// Cleared rather than kept: after a context loss every program name means
+	// nothing, so the next frame must build again from scratch.
+	g_cache.clear();
 }
 
 #endif //__EMSCRIPTEN__

@@ -258,6 +258,8 @@ if(EMSCRIPTEN)
         XRenderGLES/GLESSystem.cpp
         XRenderGLES/GLESFrame.cpp
         XRenderGLES/GLESShader.cpp
+        XRenderGLES/GLESShaderGen.cpp
+        XRenderGLES/GLESConform.cpp
         XRenderGLES/GLESDraw.cpp
         XRenderGLES/GLESTexture.cpp
         XRenderGLES/GLESVertexBuffer.cpp

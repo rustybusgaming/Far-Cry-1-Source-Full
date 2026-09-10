@@ -1205,6 +1205,62 @@ The CI artifact ships `serve_web.py` and a `README.txt` alongside the three
 build files, because downloading them and double-clicking the HTML is the
 obvious thing to do and the resulting error names the wrong culprit.
 
+## The stage model, verified rather than asserted
+
+The WebGL2 backend used to have **one hardcoded program**: texture times vertex
+colour, or vertex colour alone. That is `eCO_MODULATE` with `DEF_TEXARG0` and
+nothing else. It now translates the same description the WebGPU backend does,
+through the same operation table.
+
+### One table, two languages
+
+`Common/CryPassGen.cpp` holds every decision — what `eCO_MODULATE` does, that
+`eCO_DETAIL` is `MODULATE2X` in this engine's usage, what `eCO_DOTPRODUCT3`
+biases, which three operations are refused. The two languages differ only in
+`SCryShaderDialect`: how a vec4 constructor is spelled, how a local is declared,
+how a texture is sampled.
+
+That is deliberately small. If something bigger than spelling has to differ, the
+difference is real and belongs in a backend.
+
+Written twice, those decisions drift — one backend gets a fix and the other does
+not — and since WebGPU cannot run in this container at all, the divergence would
+be invisible until something rendered wrong on hardware nobody has to hand.
+
+### Compiling the output, not just reading it
+
+`RenderDll/XRenderGLES/GLESConform.cpp` builds six generated programs through
+the real GLES driver, draws with each into an off-screen target, and reads the
+pixel back. The expected colours are worked out by hand from what each operation
+is *defined* to do — not from what the generator emits, or the test would only
+prove the generator agrees with itself.
+
+| Case | Why it is there |
+|---|---|
+| one stage, modulate | the commonest pass in the engine |
+| one stage, no texture | `eCA_Texture` must read as white, not black |
+| two stages, modulate | **the case the WGSL generator got wrong** |
+| two stages, add | a different wrong answer if the two texels were confused |
+| alpha test that keeps | the threshold is applied at all |
+| alpha test that discards | `GS_ALPHATEST_LESS128` keeps fragments *below* |
+
+Confirmed non-vacuous by putting the duplicate-`texel` bug back and rebuilding.
+The driver's own message:
+
+```
+ERROR: 0:21: 'texel' : redefinition
+[error]   FAIL two stages, second modulates the first (program did not build)
+shader conformance 4/6 FAILED
+```
+
+That is the compiler catching what no assertion about emitted text could. It
+runs as part of `web_host_frames`, so it is in CI.
+
+**What this is and is not evidence for.** Both backends share the operation
+table, so a passing case here says something about the WGSL path too — the only
+evidence that path can get without an adapter. It says nothing about WGSL's own
+bindings and entry points, which remain unverified.
+
 ### Next
 
 Feeding real `SShaderPass` data through this, which needs the engine to reach a

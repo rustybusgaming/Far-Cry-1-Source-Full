@@ -46,6 +46,8 @@
 
 #include "CryHostLog.h"
 
+#include "GLESConform.h"
+
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 
@@ -300,6 +302,33 @@ static void PublishPixelSample(IRenderer* pRenderer)
 }
 
 //////////////////////////////////////////////////////////////////////////
+//! Compile the generated shaders with the real driver and check what they
+//! compute. See RenderDll/XRenderGLES/GLESConform.cpp.
+//!
+//! The result goes on window so the browser test can assert on it. A count
+//! rather than a bare pass/fail, because "3 of 6" and "0 of 6" are different
+//! problems and the difference should not need the log to find.
+//////////////////////////////////////////////////////////////////////////
+static void RunShaderConformance()
+{
+	int nPassed = 0, nTotal = 0;
+	const bool bOk = GLESConform_Run(nPassed, nTotal);
+
+	printf("[web] shader conformance: %d/%d passed\n", nPassed, nTotal);
+
+	// No commas inside the braced block: EM_ASM is a macro, and a comma at
+	// brace depth 0 would split it into arguments.
+	EM_ASM({
+		window.__cryConformPassed = $0;
+		window.__cryConformTotal  = $1;
+	}, nPassed, nTotal);
+
+	if (!bOk)
+		fprintf(stderr, "[web] shader conformance FAILED; the per-case detail "
+		                "is in the engine log above\n");
+}
+
+//////////////////////////////////////////////////////////////////////////
 //! One frame.
 //!
 //! The ordering is CGame::Run's: BeginFrame, then the world, then Update to
@@ -348,6 +377,16 @@ static void WebFrame(void*)
 	pRenderer->Update();
 
 	++g_host.nFrame;
+
+	// The shader conformance run, once, at the same point and for the same
+	// reason: the programs and buffers exist by now. It draws into its own
+	// off-screen target, so it does not disturb this frame.
+	//
+	// It lives here rather than in a test binary because it needs a real GL
+	// context, and the only place there is one is inside a browser running
+	// this host.
+	if (g_host.nFrame == 5)
+		RunShaderConformance();
 
 	// Once, a few frames in, sample what actually reached the framebuffer and
 	// publish it. Through IRenderer::ReadFrameBuffer rather than a direct GL

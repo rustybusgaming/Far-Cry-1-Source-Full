@@ -21,6 +21,9 @@ cry_apply_common_settings(CryWeb)
 target_include_directories(CryWeb PRIVATE
     ${CMAKE_SOURCE_DIR}/CryCommon
     ${CMAKE_SOURCE_DIR}/Hosts
+    # For GLESConform.h. The host calls into the backend for the one thing that
+    # needs a real GL context and therefore cannot live in a test binary.
+    ${CMAKE_SOURCE_DIR}/RenderDll/XRenderGLES
 )
 
 # CRY_HEADLESS_MODULES with the renderer swapped. Built by string replacement
