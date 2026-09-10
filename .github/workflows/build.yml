@@ -1,0 +1,133 @@
+################################################################################
+# CI for the CryEngine web port.
+#
+# Two jobs, because the port has two targets and they fail differently:
+#
+#   native   clang on Linux. Fast, and it is where a real compile error shows up
+#            first -- native clang gives the same diagnostics as emcc for a
+#            fraction of the build time.
+#
+#   wasm     the actual deliverable. Also the only place the browser tests can
+#            run, and those are the ones that check real pixels rather than
+#            checking that something ran.
+#
+# Both build from scratch. That is deliberate: an incremental build masked a
+# broken target during development -- the test suite passed against a stale
+# binary because a source file had stopped compiling and the old executable was
+# still on disk. A clean build cannot do that.
+################################################################################
+
+name: build
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+# A new push makes an in-flight run of the same branch pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: native (clang)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang
+
+      - name: Report toolchain
+        run: |
+          clang++ --version
+          cmake --version
+          ninja --version
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_C_COMPILER=clang
+
+      - name: Build
+        run: cmake --build build
+
+      # Separate from the build so a failure here is legible as a TEST failure
+      # rather than being buried in compiler output.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      # The headless engine starting and shutting down cleanly is the single
+      # most informative signal in this project, so it is run explicitly and its
+      # output kept in the log rather than only asserted inside ctest.
+      - name: Run the headless engine
+        run: ./build/Headless/Headless
+
+  wasm:
+    name: wasm (emscripten)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      # Pinned rather than "latest". A toolchain bump is a real source of
+      # breakage here: moving from clang 18 to clang 24 surfaced two latent bugs
+      # in the engine's templates that older compilers accept. When this version
+      # moves it should be a deliberate commit, not a surprise on an unrelated PR.
+      - name: Set up Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.9
+          actions-cache-folder: emsdk-cache
+
+      - name: Report toolchain
+        run: emcc --version
+
+      - name: Install Playwright and Chromium
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install playwright
+          python3 -m playwright install --with-deps chromium
+
+      - name: Configure
+        run: emcmake cmake -S . -B build-wasm -G Ninja
+
+      - name: Build
+        run: cmake --build build-wasm
+
+      - name: Run the headless engine under Node
+        run: node build-wasm/Headless/Headless.js
+
+      # CRY_REQUIRE_BROWSER turns a missing Playwright into a failure instead of
+      # a skip. Locally a skip is correct -- not everyone wants a browser to
+      # build the engine -- but on CI it would mean the pixel checks silently
+      # stopped running, which is exactly the failure they exist to prevent.
+      - name: Test
+        env:
+          CRY_REQUIRE_BROWSER: "1"
+        run: ctest --test-dir build-wasm --output-on-failure
+
+      # The browser build is the thing someone would actually want to try, and
+      # it is awkward to produce without an Emscripten install.
+      - name: Upload the browser build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cryweb-wasm
+          path: |
+            build-wasm/Web/CryWeb.html
+            build-wasm/Web/CryWeb.js
+            build-wasm/Web/CryWeb.wasm
+          if-no-files-found: error

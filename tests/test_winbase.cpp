@@ -241,6 +241,79 @@ static void test_file_attributes()
 }
 
 //////////////////////////////////////////////////////////////////////////
+// The asset-loading path, end to end.
+//
+// This is the composition that decides whether the game's data loads at all on
+// a case-sensitive filesystem, and it is worth testing separately from
+// getFilenameNoCase because the interesting part is the COMBINATION.
+//
+// CCryPak::BeautifyPath lowercases the entire path -- its own comment says
+// "make the path lower-letters and with native slashes" -- which is free on
+// Windows and destructive here. Crytek knew: the LINUX branch immediately after
+// it calls getFilenameNoCase to recover the real spelling. So every asset
+// lookup is "destroy the case, then reconstruct it", and the reconstruction has
+// to work through EVERY directory level, not just the filename.
+//
+// The single-level test above would pass even if the implementation only fixed
+// the last component, which would leave the engine unable to open a single file
+// in the real game's FCData/Localized/... tree.
+//////////////////////////////////////////////////////////////////////////
+static void test_multilevel_case_resolution()
+{
+	printf("multi-level case resolution (the asset path):\n");
+
+	// A fragment of the real layout, in the game's own casing.
+	mkdir("FCDataTest", 0755);
+	mkdir("FCDataTest/Localized", 0755);
+	mkdir("FCDataTest/Textures", 0755);
+	write_file("FCDataTest/Localized/English.pak", "PK");
+	write_file("FCDataTest/Textures/Detail.DDS", "DDS");
+
+	string out;
+
+	// What BeautifyPath actually produces: every component lowercased.
+	check(getFilenameNoCase("fcdatatest/localized/english.pak", out),
+	      "a fully lowercased path resolves");
+	check(strcmp(out.c_str(), "FCDataTest/Localized/English.pak") == 0,
+	      "and every directory level recovers its real case");
+
+	// Mixed casing in the middle, which is what a hand-written script produces.
+	string out2;
+	check(getFilenameNoCase("FCDATATEST/localized/ENGLISH.pak", out2),
+	      "mixed casing at any level resolves");
+	check(strcmp(out2.c_str(), "FCDataTest/Localized/English.pak") == 0,
+	      "and still reports the on-disk spelling");
+
+	// An extension whose case differs on disk -- common for .DDS.
+	string out3;
+	check(getFilenameNoCase("fcdatatest/textures/detail.dds", out3),
+	      "a mis-cased extension resolves");
+	check(strcmp(out3.c_str(), "FCDataTest/Textures/Detail.DDS") == 0,
+	      "and keeps the on-disk extension case");
+
+	// A wrong directory must still fail, or the resolver is guessing.
+	string out4;
+	check(!getFilenameNoCase("fcdatatest/nosuchdir/english.pak", out4),
+	      "a missing directory level does not resolve");
+
+	string out5;
+	check(!getFilenameNoCase("fcdatatest/localized/german.pak", out5),
+	      "a missing file does not resolve");
+
+	// And fopen_nocase, which is what CryPak ultimately calls, must open it.
+	FILE* f = fopen_nocase("fcdatatest/localized/english.pak", "rb");
+	check(f != NULL, "fopen_nocase opens through a fully lowercased path");
+	if (f)
+		fclose(f);
+
+	remove("FCDataTest/Localized/English.pak");
+	remove("FCDataTest/Textures/Detail.DDS");
+	rmdir("FCDataTest/Localized");
+	rmdir("FCDataTest/Textures");
+	rmdir("FCDataTest");
+}
+
+//////////////////////////////////////////////////////////////////////////
 // CRT shims and the remaining Linux-layer text helpers.
 //////////////////////////////////////////////////////////////////////////
 static void test_crt_shims()
@@ -449,6 +522,7 @@ int main()
 {
 	test_comparePathNames();
 	test_fopen_nocase();
+	test_multilevel_case_resolution();
 	test_adaptFilenameToLinux();
 	test_fullpath();
 	test_file_attributes();
