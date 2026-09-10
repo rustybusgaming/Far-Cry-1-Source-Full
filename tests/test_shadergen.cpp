@@ -226,10 +226,20 @@ static void TestAlphaTestBecomesDiscard()
 	CHECK(WGPUShaderGen_Build(desc, sNoTest, sError), "builds without an alpha test");
 	CHECK(!Has(sNoTest, "discard"), "no discard when no alpha test is asked for");
 
-	desc.fAlphaTest = 0.5f;
+	desc.nAlphaTest = eWGPUAlphaTest_GreaterEqual;
+	desc.fAlphaRef  = 0.5f;
 	CHECK(WGPUShaderGen_Build(desc, sWithTest, sError), "builds with an alpha test");
 	CHECK(Has(sWithTest, "discard"), "an alpha test emits a discard");
-	CHECK(Has(sWithTest, "acc.a < 0.5"), "the discard uses the requested threshold");
+	CHECK(Has(sWithTest, "acc.a >= 0.5"), "a >= test emits a >= comparison");
+
+	// The direction is the point. GS_ALPHATEST_LESS128 keeps fragments BELOW
+	// the threshold; emitting the same comparison as the >= tests would invert
+	// every surface that uses it.
+	std::string sLess;
+	desc.nAlphaTest = eWGPUAlphaTest_Less;
+	CHECK(WGPUShaderGen_Build(desc, sLess, sError), "builds a less-than alpha test");
+	CHECK(Has(sLess, "acc.a < 0.5"), "a less-than test emits a < comparison");
+	CHECK(!Has(sLess, "acc.a >= 0.5"), "a less-than test is not emitted as >=");
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -259,8 +269,15 @@ static void TestKeyDistinguishesDescriptions()
 	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(d), "a different stage count changes the key");
 
 	SWGPUShaderDesc e = a;
-	e.fAlphaTest = 0.5f;
+	e.nAlphaTest = eWGPUAlphaTest_GreaterEqual;
+	e.fAlphaRef  = 0.5f;
 	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(e), "an alpha test changes the key");
+
+	// Same threshold, opposite direction: different shader, so different key.
+	SWGPUShaderDesc eLess = e;
+	eLess.nAlphaTest = eWGPUAlphaTest_Less;
+	CHECK(WGPUShaderGen_Key(e) != WGPUShaderGen_Key(eLess),
+	      "the alpha test direction changes the key");
 
 	SWGPUShaderDesc f = a;
 	f.stages[0].bHasTexture = false;
@@ -269,7 +286,7 @@ static void TestKeyDistinguishesDescriptions()
 	// The threshold is part of the emitted source, so two different thresholds
 	// cannot share a pipeline either.
 	SWGPUShaderDesc g = e;
-	g.fAlphaTest = 0.25f;
+	g.fAlphaRef = 0.25f;
 	CHECK(WGPUShaderGen_Key(e) != WGPUShaderGen_Key(g),
 	      "a different alpha threshold changes the key");
 }

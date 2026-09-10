@@ -1080,12 +1080,87 @@ has to be in it — including the alpha threshold, not merely whether there is
 one. Two passes colliding on one key would render one with the other's shader.
 Six separate assertions cover that.
 
+## The pipeline cache
+
+WebGPU bakes almost everything into an **immutable render pipeline object** —
+both shader modules, the vertex layout, blend state, depth state, primitive
+topology — and creating one compiles shaders. Nothing may build a pipeline per
+draw. The engine, written for an API where a blend mode was a function call,
+changes state constantly. So every distinct combination is built once and looked
+up thereafter.
+
+`WGPUPipeline` is where the two pure translators meet: `WGPUShaderGen` turns the
+pass's texture stages into WGSL, `WGPUStateGen` turns its render-state word into
+blend and depth state, and this combines them.
+
+### Render state is one integer carrying eleven things
+
+`WGPUStateGen` decodes it, and it is worth decoding carefully — several of the
+flags are *negative*, and one read backwards gives a scene that renders but is
+subtly wrong:
+
+- **A zero blend nibble means "no blending", but `GS_BLSRC_ZERO` is `0x1`.**
+  Absence is not the zero factor. Treating them the same would multiply every
+  opaque surface in the game by nothing.
+- `GS_NODEPTHTEST` is negative, `GS_DEPTHWRITE` is positive. Read either the
+  wrong way and geometry sorts backwards — which looks like a camera bug.
+- WebGPU cannot disable the depth test as such; the equivalent is an
+  always-pass comparison.
+
+### The alpha test has a direction, and it matters
+
+The first version of the generator took a threshold and emitted `acc.a < ref`.
+That is wrong: `GS_ALPHATEST_LESS128` keeps fragments **below** the threshold
+while the other three keep fragments above it. Collapsing them would invert
+every surface using it — cut-out foliage would render as the holes. The
+direction is now carried through to the shader and asserted both ways.
+
+Alpha test becomes a `discard`, since WebGPU has no such render state. The
+condition emitted is the *negation* of the keep test: the engine says which
+fragments survive, a shader says which to throw away.
+
+### The key is the dangerous part
+
+A key missing a field means two passes silently share a pipeline, and the second
+renders with the first's shader or blend mode — on some surfaces, sometimes.
+Horrible to chase, entirely preventable without a GPU.
+
+So the key is built from both translators' sub-keys plus the two fields that
+belong to neither — the vertex format and the topology, which the pipeline also
+bakes in. Every field has its own assertion, plus a pairwise check that six
+realistic passes (opaque, alpha-blended, additive particle, alpha-tested
+foliage, two-stage detail, untextured) all come out distinct. Verified
+non-vacuous by dropping the vertex format from the key and watching the suite
+fail.
+
+### What is and is not verified
+
+Three test binaries, **all running natively as well as in wasm**, because all
+three translators are pure functions:
+
+| | |
+|---|---|
+| `shadergen` | texture stages → WGSL |
+| `stategen` | `GS_*` → blend, depth, colour mask, alpha test |
+| `pipelinekey` | the cache key |
+
+What stays unverified is `WGPUPipeline.cpp`'s device half — handing the string
+to Dawn and describing the bind group layout. That needs a GPU. The split is
+deliberate: `WGPUPipeline_Key` lives *outside* the Emscripten guard precisely so
+the consequential half is testable here.
+
+One thing to know when it does run: **pipelines currently declare no depth
+state**, because `WGPUFrame.cpp` does not create a depth attachment yet, and a
+pipeline whose depth state does not match its render pass is invalid. The
+decoded depth state is already in the key, so this becomes correct as soon as a
+depth buffer exists.
+
 ### Next
 
-Wiring the generator into a pipeline cache in `XRenderWGPU`, then reading real
-`SShaderPass` data through it. After that, the register-combiner and assembly
-paths — and those need a machine with a GPU to check, plus a copy of the game,
-since `.efx` shader scripts are assets and are not in this tree.
+Feeding real `SShaderPass` data through this, which needs the engine to reach a
+draw with a shader bound. After that the register-combiner and assembly paths —
+and those need both a GPU and a copy of the game, since `.efx` shader scripts
+are assets and are not in this tree.
 
 ---
 

@@ -31,13 +31,51 @@ add_test(NAME webinput COMMAND test_webinput)
 # function, so it needs no device, no adapter and no browser. Everything else
 # in that backend touches the GPU and cannot be checked without one.
 add_executable(test_shadergen test_shadergen.cpp
-               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUStateGen.cpp")
 cry_apply_common_settings(test_shadergen)
 target_include_directories(test_shadergen PRIVATE
     "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
 target_link_libraries(test_shadergen PRIVATE CryCommon)
 
 add_test(NAME shadergen COMMAND test_shadergen)
+
+# GS_* render state to pipeline state. Also pure, also testable without a GPU,
+# and worth testing carefully: it is one integer carrying eleven things, several
+# of them negative flags, and one read backwards gives a scene that renders but
+# is subtly wrong.
+add_executable(test_stategen test_stategen.cpp
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUStateGen.cpp")
+cry_apply_common_settings(test_stategen)
+target_include_directories(test_stategen PRIVATE
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
+target_link_libraries(test_stategen PRIVATE CryCommon)
+
+add_test(NAME stategen COMMAND test_stategen)
+
+# The pipeline cache key. Pure -- WGPUPipeline.cpp keeps its key function
+# outside the Emscripten guard precisely so it can be tested here -- and the
+# highest-consequence of the three: a key missing a field means two passes
+# silently share a pipeline and one renders with the other's shader.
+add_executable(test_pipelinekey test_pipelinekey.cpp
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUPipeline.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUStateGen.cpp")
+cry_apply_common_settings(test_pipelinekey)
+target_include_directories(test_pipelinekey PRIVATE
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
+target_link_libraries(test_pipelinekey PRIVATE CryCommon)
+
+# Under Emscripten, WGPUPipeline.h reveals its device half and pulls in Dawn's
+# headers, so the test needs the same port flag the backend does. Natively that
+# half is compiled out and only the pure key function remains -- which is the
+# whole reason the key lives outside the Emscripten guard.
+if(EMSCRIPTEN)
+    target_compile_options(test_pipelinekey PRIVATE "--use-port=emdawnwebgpu")
+    target_link_options(test_pipelinekey PRIVATE "--use-port=emdawnwebgpu")
+endif()
+
+add_test(NAME pipelinekey COMMAND test_pipelinekey)
 
 # The compiled-in module registry that replaces dlopen()/dlsym(). It links the
 # whole module set, because the point of the test is that the real factories

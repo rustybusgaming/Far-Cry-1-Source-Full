@@ -392,12 +392,27 @@ bool WGPUShaderGen_Build(const SWGPUShaderDesc& desc, std::string& sOut, std::st
 		}
 	}
 
-	// Alpha test, as a discard. WebGPU has no alpha-test render state; it went
-	// with the rest of the fixed-function pipeline.
-	if (desc.fAlphaTest >= 0.0f)
+	// Alpha test, as a discard. The condition is the NEGATION of the keep test:
+	// the engine says which fragments survive, and a shader says which to throw
+	// away.
+	if (desc.nAlphaTest != eWGPUAlphaTest_None)
 	{
-		char buf[128];
-		snprintf(buf, sizeof(buf), "\n  if (acc.a < %.6f) { discard; }\n", desc.fAlphaTest);
+		char buf[160];
+		switch (desc.nAlphaTest)
+		{
+		case eWGPUAlphaTest_Greater:
+			snprintf(buf, sizeof(buf), "\n  if (!(acc.a > %.6f)) { discard; }\n", desc.fAlphaRef);
+			break;
+		case eWGPUAlphaTest_GreaterEqual:
+			snprintf(buf, sizeof(buf), "\n  if (!(acc.a >= %.6f)) { discard; }\n", desc.fAlphaRef);
+			break;
+		case eWGPUAlphaTest_Less:
+			snprintf(buf, sizeof(buf), "\n  if (!(acc.a < %.6f)) { discard; }\n", desc.fAlphaRef);
+			break;
+		default:
+			buf[0] = 0;
+			break;
+		}
 		s += buf;
 	}
 
@@ -431,10 +446,11 @@ unsigned long long WGPUShaderGen_Key(const SWGPUShaderDesc& desc)
 	MIX(desc.bHasVertexColor ? 1 : 0);
 	MIX(desc.bHasTexCoord ? 1 : 0);
 
-	// The threshold changes the emitted source, so it is part of the key rather
-	// than just its presence.
+	// Both the direction and the threshold change the emitted source, so both
+	// are in the key rather than just the presence of a test.
+	MIX(desc.nAlphaTest);
 	int nAlphaBits = 0;
-	memcpy(&nAlphaBits, &desc.fAlphaTest, sizeof(nAlphaBits));
+	memcpy(&nAlphaBits, &desc.fAlphaRef, sizeof(nAlphaBits));
 	MIX(nAlphaBits);
 
 	for (int i = 0; i < desc.nStages && i < SWGPUShaderDesc::kMaxStages; ++i)

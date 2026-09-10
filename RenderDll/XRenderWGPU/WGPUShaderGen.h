@@ -47,6 +47,9 @@
 
 #include <string>
 
+// For EWGPUAlphaTest. Both of these are pure, WebGPU-free translation headers.
+#include "WGPUStateGen.h"
+
 //! One texture stage, as SShaderTexUnit describes it.
 struct SWGPUStageDesc
 {
@@ -71,13 +74,20 @@ struct SWGPUShaderDesc
 	bool			bHasVertexColor;	//!< the vertex format carries a colour
 	bool			bHasTexCoord;		//!< ... and a texture coordinate
 
-	//! Alpha test threshold, or < 0 for none. WebGPU has no alpha test state --
-	//! it was removed along with the rest of the fixed-function pipeline -- so
-	//! it becomes a discard in the shader, which is where modern APIs put it.
-	float			fAlphaTest;
+	//! Alpha test. WebGPU has no alpha-test state -- it went with the rest of
+	//! the fixed-function pipeline -- so it becomes a discard in the shader,
+	//! which is where modern APIs put it.
+	//!
+	//! The DIRECTION is carried, not just a threshold. The engine has both
+	//! "keep while alpha is at least X" and "keep while alpha is below X"
+	//! (GS_ALPHATEST_LESS128), and collapsing those into one comparison would
+	//! invert every surface that uses the latter.
+	int				nAlphaTest;		//!< EWGPUAlphaTest
+	float			fAlphaRef;
 
 	SWGPUShaderDesc()
-		: nStages(0), bHasVertexColor(true), bHasTexCoord(true), fAlphaTest(-1.0f) {}
+		: nStages(0), bHasVertexColor(true), bHasTexCoord(true)
+		, nAlphaTest(eWGPUAlphaTest_None), fAlphaRef(0.0f) {}
 };
 
 //! Unpack the two arguments the engine packs into one int.

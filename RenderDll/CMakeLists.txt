@@ -360,6 +360,9 @@ if(EMSCRIPTEN)
         XRenderWGPU/WGPUContext.cpp
         XRenderWGPU/WGPUSystem.cpp
         XRenderWGPU/WGPUFrame.cpp
+        XRenderWGPU/WGPUShaderGen.cpp
+        XRenderWGPU/WGPUStateGen.cpp
+        XRenderWGPU/WGPUPipeline.cpp
         INCLUDES ${CRY_RENDER_INCLUDES}
                  "${CMAKE_CURRENT_SOURCE_DIR}/XRenderWGPU"
         DEPENDS  CryCommon
