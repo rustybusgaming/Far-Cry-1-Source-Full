@@ -30,6 +30,8 @@
 
 #include "WGPUShaderGen.h"
 
+#include "shader_structure.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -48,183 +50,26 @@ static bool Has(const std::string& s, const char* szNeedle)
 }
 
 //////////////////////////////////////////////////////////////////////////
-//! Everything below this line answers a specific failure.
+//! Structural validity, on one shader. Called by every test that builds one.
 //!
-//! The tests above assert that the right text APPEARS. That is not the same as
-//! the shader being valid, and the difference was not academic: the generator
-//! emitted "let texel = ..." once per stage into one function scope, so every
-//! multi-stage pass was a redeclaration and failed to compile in the browser --
-//! while every substring assertion here passed, because both stages' text was
-//! present exactly as expected.
-//!
-//! So these check the emitted WGSL's STRUCTURE instead of its contents. They
-//! are not a WGSL parser and cannot be: what they are is the smallest set of
-//! rules that the generator can actually violate.
-//////////////////////////////////////////////////////////////////////////
-
-//////////////////////////////////////////////////////////////////////////
-//! Splits an identifier off the front of a string.
-//////////////////////////////////////////////////////////////////////////
-static bool IsIdentChar(char c)
-{
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-	    || (c >= '0' && c <= '9') || c == '_';
-}
-
-//////////////////////////////////////////////////////////////////////////
-//! No identifier is declared twice within one brace depth of one function.
-//!
-//! WGSL, like C++, rejects a redeclaration in the same scope. The generator
-//! emits a flat sequence of "let" bindings into the fragment function's top
-//! level, so this is exactly the rule it can break.
-//////////////////////////////////////////////////////////////////////////
-static bool DeclarationsAreUnique(const std::string& sWGSL, std::string& sDup)
-{
-	// A declaration's scope is identified by the brace depth it appears at.
-	// The generator never re-enters a depth it has left within one function
-	// (the alpha-test discard is the only nesting, and declares nothing), so
-	// depth alone is a sufficient scope key here.
-	std::string aDeclared[64];		// depth -> space-separated names seen
-	int nDepth = 0;
-
-	size_t i = 0;
-	while (i < sWGSL.size())
-	{
-		const char c = sWGSL[i];
-
-		if (c == '{')
-		{
-			++nDepth;
-			if (nDepth >= 64) { sDup = "brace depth out of range"; return false; }
-			aDeclared[nDepth].clear();
-			++i;
-			continue;
-		}
-		if (c == '}')
-		{
-			if (nDepth > 0) --nDepth;
-			++i;
-			continue;
-		}
-
-		// "let" or "var" at the start of a token.
-		const bool bAtTokenStart = (i == 0) || !IsIdentChar(sWGSL[i - 1]);
-		const bool bLet = bAtTokenStart && sWGSL.compare(i, 4, "let ") == 0;
-		const bool bVar = bAtTokenStart && sWGSL.compare(i, 4, "var ") == 0;
-
-		if (!bLet && !bVar)
-		{
-			++i;
-			continue;
-		}
-
-		size_t j = i + 4;
-		while (j < sWGSL.size() && sWGSL[j] == ' ') ++j;
-
-		const size_t nStart = j;
-		while (j < sWGSL.size() && IsIdentChar(sWGSL[j])) ++j;
-
-		if (j == nStart) { i += 4; continue; }
-
-		const std::string sName = sWGSL.substr(nStart, j - nStart);
-
-		// Module-scope "var" declarations are the bindings, which carry
-		// attributes and are handled by the binding assertions elsewhere.
-		if (nDepth > 0)
-		{
-			const std::string sKey = " " + sName + " ";
-			if (aDeclared[nDepth].find(sKey) != std::string::npos)
-			{
-				sDup = sName;
-				return false;
-			}
-			aDeclared[nDepth] += sKey;
-		}
-
-		i = j;
-	}
-
-	return true;
-}
-
-//////////////////////////////////////////////////////////////////////////
-//! Every local the generator names is declared before it is used.
-//!
-//! Restricted to the generator's own naming scheme -- texelN, cN, aN -- which
-//! is where an off-by-one between the emit site and the argument resolver would
-//! show up. A general "is every identifier bound" check would need a real
-//! parser; this needs none and catches the mistake that is actually available.
-//////////////////////////////////////////////////////////////////////////
-static bool GeneratedLocalsAreDeclared(const std::string& sWGSL, std::string& sUndeclared)
-{
-	std::string sDeclared;
-
-	size_t i = 0;
-	while (i < sWGSL.size())
-	{
-		const bool bAtTokenStart = (i == 0) || !IsIdentChar(sWGSL[i - 1]);
-
-		if (!bAtTokenStart || !IsIdentChar(sWGSL[i]))
-		{
-			++i;
-			continue;
-		}
-
-		size_t j = i;
-		while (j < sWGSL.size() && IsIdentChar(sWGSL[j])) ++j;
-
-		const std::string sTok = sWGSL.substr(i, j - i);
-
-		// Is this token one of the generator's per-stage locals?
-		bool bGenerated = false;
-		{
-			size_t nPrefix = 0;
-			if (sTok.compare(0, 5, "texel") == 0)                      nPrefix = 5;
-			else if (sTok.size() > 1 && (sTok[0] == 'c' || sTok[0] == 'a')) nPrefix = 1;
-
-			if (nPrefix && sTok.size() > nPrefix)
-			{
-				bGenerated = true;
-				for (size_t k = nPrefix; k < sTok.size(); ++k)
-					if (sTok[k] < '0' || sTok[k] > '9') { bGenerated = false; break; }
-			}
-		}
-
-		if (bGenerated)
-		{
-			const std::string sKey = " " + sTok + " ";
-			const bool bIsDecl = (i >= 4) && (sWGSL.compare(i - 4, 4, "let ") == 0
-			                               || sWGSL.compare(i - 4, 4, "var ") == 0);
-
-			if (bIsDecl)
-				sDeclared += sKey;
-			else if (sDeclared.find(sKey) == std::string::npos)
-			{
-				sUndeclared = sTok;
-				return false;
-			}
-		}
-
-		i = j;
-	}
-
-	return true;
-}
-
-//////////////////////////////////////////////////////////////////////////
-//! Both structural rules, on one shader. Called by every test that builds one.
+//! The checks themselves are in shader_structure.h, shared with the GLSL ES
+//! generator's tests -- both generators emit their declarations from the same
+//! shared code, so a bug in it has to be catchable from either side. That
+//! header says what the checks are, and which real failure put them there.
 //////////////////////////////////////////////////////////////////////////
 static void CheckWellFormed(const std::string& sWGSL, const char* szWhat)
 {
 	char what[192];
 	std::string sName;
 
-	const bool bUnique = DeclarationsAreUnique(sWGSL, sName);
+	const bool bUnique = CryTest_DeclarationsAreUnique(
+		sWGSL, kWGSLDeclKeywords, 2, sName);
 	snprintf(what, sizeof(what), "%s: no identifier is declared twice in one scope%s%s",
 	         szWhat, bUnique ? "" : " -- duplicate: ", bUnique ? "" : sName.c_str());
 	CHECK(bUnique, what);
 
-	const bool bBound = GeneratedLocalsAreDeclared(sWGSL, sName);
+	const bool bBound = CryTest_GeneratedLocalsAreDeclared(
+		sWGSL, kWGSLDeclKeywords, 2, sName);
 	snprintf(what, sizeof(what), "%s: every generated local is declared%s%s",
 	         szWhat, bBound ? "" : " -- undeclared: ", bBound ? "" : sName.c_str());
 	CHECK(bBound, what);

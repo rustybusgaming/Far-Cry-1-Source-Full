@@ -33,7 +33,8 @@ add_test(NAME webinput COMMAND test_webinput)
 add_executable(test_shadergen test_shadergen.cpp
                "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
                "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
-               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassGen.cpp")
 cry_apply_common_settings(test_shadergen)
 target_include_directories(test_shadergen PRIVATE
     "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU"
@@ -42,13 +43,38 @@ target_link_libraries(test_shadergen PRIVATE CryCommon)
 
 add_test(NAME shadergen COMMAND test_shadergen)
 
+# The same translation emitted as GLSL ES 3.00.
+#
+# This one carries more weight than its size suggests. The WebGL2 backend can
+# be RUN here -- in a real browser, reading real pixels -- while the WebGPU one
+# cannot, and since both emitters share their operation table, exercising this
+# path is evidence about the decisions the WGSL path also depends on.
+#
+# It links the WGSL generator too, so one test can assert that the two
+# languages agree on a description rather than each asserting its own half.
+add_executable(test_glesshadergen test_glesshadergen.cpp
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderGLES/GLESShaderGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassGen.cpp")
+cry_apply_common_settings(test_glesshadergen)
+target_include_directories(test_glesshadergen PRIVATE
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderGLES"
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU"
+    "${PROJECT_SOURCE_DIR}/RenderDll/Common")
+target_link_libraries(test_glesshadergen PRIVATE CryCommon)
+
+add_test(NAME glesshadergen COMMAND test_glesshadergen)
+
 # GS_* render state to pipeline state. Also pure, also testable without a GPU,
 # and worth testing carefully: it is one integer carrying eleven things, several
 # of them negative flags, and one read backwards gives a scene that renders but
 # is subtly wrong.
 add_executable(test_stategen test_stategen.cpp
                "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
-               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassGen.cpp")
 cry_apply_common_settings(test_stategen)
 target_include_directories(test_stategen PRIVATE
     "${PROJECT_SOURCE_DIR}/RenderDll/Common")
@@ -64,7 +90,8 @@ add_executable(test_pipelinekey test_pipelinekey.cpp
                "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUPipeline.cpp"
                "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
                "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
-               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassGen.cpp")
 cry_apply_common_settings(test_pipelinekey)
 target_include_directories(test_pipelinekey PRIVATE
     "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU"

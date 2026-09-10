@@ -253,6 +253,7 @@ if(EMSCRIPTEN)
         XRenderNULL/NULL_System.cpp
         Common/CryStateGen.cpp
         Common/CryPassDesc.cpp
+        Common/CryPassGen.cpp
         XRenderGLES/GLESContext.cpp
         XRenderGLES/GLESSystem.cpp
         XRenderGLES/GLESFrame.cpp
@@ -363,6 +364,7 @@ if(EMSCRIPTEN)
         XRenderWGPU/WGPUFrame.cpp
         Common/CryStateGen.cpp
         Common/CryPassDesc.cpp
+        Common/CryPassGen.cpp
         XRenderWGPU/WGPUShaderGen.cpp
         XRenderWGPU/WGPUPipeline.cpp
         INCLUDES ${CRY_RENDER_INCLUDES}
