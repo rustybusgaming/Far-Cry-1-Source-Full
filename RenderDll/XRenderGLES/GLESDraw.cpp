@@ -239,13 +239,10 @@ void CGLESRenderer::DrawDynamic(const struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F* pVe
 	if (!GLESContext_IsCreated() || !EnsureDynamicBuffers())
 		return;
 
-	// Whether a texture is bound decides WHICH program, not a uniform inside
-	// one, so it has to be known before the lookup. The two cases are two
-	// descriptions and two generated shaders; see GLESShader_DynamicPass.
-	const bool bTextured = GLESTexture_IsBound();
-
-	const SGLESProgram* pProgram =
-		GLESShader_GetForPass(GLESShader_DynamicPass(bTextured));
+	// The program follows the stage the engine last described, plus two facts
+	// only known now: whether a texture is bound, and the alpha test carried
+	// in the render state. CurrentPass folds those in.
+	const SGLESProgram* pProgram = GLESShader_GetForPass(CurrentPass());
 	if (!pProgram)
 		return;
 
@@ -377,6 +374,11 @@ void CGLESRenderer::DrawDynamic(const struct_VERTEX_FORMAT_P3F_COL4UB_TEX2F* pVe
 	// m_CurState -- this is where it reaches GL. Everything that asked for
 	// alpha blending drew opaque until it did.
 	GLESState_Apply(m_CurState);
+
+	// The constant colour, for a stage that names eCA_Constant. Everything
+	// that sets it -- decals, rain, the sky -- was setting it into a renderer
+	// that dropped it.
+	ApplyMaterialColor(pProgram);
 
 	// Point each stage's sampler at its texture unit. Only stage 0 is ever
 	// bound today -- the engine's multi-texture paths do not reach here yet --

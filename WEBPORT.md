@@ -1352,10 +1352,56 @@ has no GLES 3.0 state and is compiled into the fragment shader as a `discard`
 instead, from the same decoded description. **Stencil** has no buffer yet, and
 enabling the test against an absent attachment would discard everything.
 
+## The engine describes stages, and the backend was ignoring that too
+
+`SetColorOp(eCo, eAo, eCa, eAa)` carries exactly the four fields of a texture
+stage, and it is how everything outside the shader system asks for one:
+
+| Caller | Asks for |
+|---|---|
+| `Cry3DEngine/DecalManager.cpp` | texture × constant |
+| `Cry3DEngine/rain.cpp` | texture × constant |
+| `Cry3DEngine/bflyes.cpp` | texture × constant |
+| `Common/RendElements/CRESky.cpp` | texture × constant |
+| `CrySystem/ScriptObjectSystem.cpp` | modulate, and `eCO_REPLACE` |
+| `CryGame/ScriptObjectRenderer.cpp` | modulate |
+
+`CNULLRenderer::SetColorOp` is `{}` — an empty inline — and `SetMaterialColor`
+is an empty function beside it. Both were inherited, so **every one of those
+requests was dropped**. Each of those callers sets a material colour that then
+had nowhere to go, and every draw came out as "texture times vertex colour"
+whatever it asked for.
+
+Both are now implemented. Nothing is compiled inside them: the description is
+recorded, and the program is fetched at draw time, because two of the fields
+the generator needs are not known until then — whether a texture is bound, and
+the alpha test carried in the render state. `CurrentPass()` folds those in,
+which is also what finally makes `m_CurState`'s alpha-test bits mean something.
+
+`SetCullMode` was a no-op from the same source and is implemented alongside.
+`R_CULL_DISABLE` and `R_CULL_NONE` are the same value, so there are three modes
+and not four.
+
+### Verified through the engine's own API
+
+A fifth quad in the browser host draws the way the sky and decals do — 
+`SetColorOp` with `eCA_Constant`, then `SetMaterialColor` — and the browser
+test reads it back as `224,96,32`.
+
+It is drawn with **white vertices** on purpose. A backend that ignores
+`SetColorOp` falls back to "texture times vertex colour", which with white
+vertices and no texture is white. The old behaviour cannot be mistaken for the
+new one. Confirmed by restoring the inherited no-op:
+
+```
+const  pixel [255, 255, 255] (wanted [224, 96, 32]) MISMATCH
+```
+
 ### Next
 
-Feeding real `SShaderPass` data through this, which needs the engine to reach a
-draw with a shader bound. After that the register-combiner and assembly paths —
+Feeding a whole `SShaderPass` through this rather than one stage at a time,
+which needs the engine to reach a draw with a shader bound — and that needs
+game data, since `.efx` shader scripts are assets. After that the register-combiner and assembly paths —
 and those need both a GPU and a copy of the game, since `.efx` shader scripts
 are assets and are not in this tree.
 

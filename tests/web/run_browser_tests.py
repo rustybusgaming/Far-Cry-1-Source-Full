@@ -74,6 +74,7 @@ def main():
     want_corner = rgb_arg("--expect-corner")
     want_tex    = rgb_arg("--expect-textured")
     want_static = rgb_arg("--expect-static")
+    want_const  = rgb_arg("--expect-constant")
 
     # The shader conformance run: generated GLSL compiled by the real driver,
     # drawn, and read back. This is the only check in the suite that proves a
@@ -159,7 +160,8 @@ def main():
                     for name, want, prefix in (("centre", want_centre, "__cryCentre"),
                                                ("corner", want_corner, "__cryCorner"),
                                                ("texture", want_tex, "__cryTex"),
-                                               ("static", want_static, "__cryStatic")):
+                                               ("static", want_static, "__cryStatic"),
+                                               ("const", want_const, "__cryConst")):
                         if want is None:
                             continue
                         pg.wait_for_function(

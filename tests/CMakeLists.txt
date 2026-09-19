@@ -191,6 +191,11 @@ if(EMSCRIPTEN)
                          # geometry takes, with attributes bound from the
                          # engine's own vertex-format tables.
                          --expect-static 96,176,48
+                         # The SetColorOp path: texture times constant, with
+                         # no texture bound, so the constant colour alone.
+                         # Drawn with WHITE vertices, so a backend that
+                         # ignored SetColorOp would give white instead.
+                         --expect-constant 224,96,32
                          # Generated GLSL, compiled by the real driver, drawn
                          # and read back. See RenderDll/XRenderGLES/
                          # GLESConform.cpp -- it covers the multi-stage case

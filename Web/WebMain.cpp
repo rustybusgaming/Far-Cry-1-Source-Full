@@ -230,6 +230,54 @@ static void DrawProofOfLife(IRenderer* pRenderer)
 		                      R_PRIMV_TRIANGLES);
 	}
 
+	//////////////////////////////////////////////////////////////////////
+	// Bottom right: the SetColorOp path.
+	//
+	// This is how everything outside the shader system asks for a texture
+	// stage -- Cry3DEngine's decals, rain and butterflies, CRESky, the script
+	// renderer. They all call SetColorOp with eCA_Constant and then set the
+	// colour with SetMaterialColor, and until recently this backend inherited
+	// the null renderer's empty implementations of both, so every one of those
+	// requests was dropped and the quad came out as plain vertex colour.
+	//
+	// Drawn with WHITE vertices on purpose. A backend that ignores SetColorOp
+	// falls back to "texture times vertex colour", which with white vertices
+	// and no texture is white -- nothing like the expected colour below. The
+	// old behaviour cannot be mistaken for the new one.
+	//////////////////////////////////////////////////////////////////////
+	const float yCTop = nHeight * 0.55f, yCBot = nHeight * 0.85f;
+
+	memset(v, 0, sizeof(v));
+	v[0].xyz = Vec3(nWidth * 0.72f, yCTop, 0.0f);
+	v[1].xyz = Vec3(nWidth * 0.92f, yCTop, 0.0f);
+	v[2].xyz = Vec3(nWidth * 0.92f, yCBot, 0.0f);
+	v[3].xyz = Vec3(nWidth * 0.72f, yCBot, 0.0f);
+
+	for (int i = 0; i < 4; ++i)
+	{
+		v[i].color.bcolor[0] = 0xFF;
+		v[i].color.bcolor[1] = 0xFF;
+		v[i].color.bcolor[2] = 0xFF;
+		v[i].color.bcolor[3] = 0xFF;
+	}
+
+	// Texture times constant, with no texture bound -- so the texel reads as
+	// white and the result is the constant colour alone. 224/255, 96/255,
+	// 32/255 comes back as 224,96,32.
+	pRenderer->SetTexture(0);
+	pRenderer->SetColorOp(eCO_MODULATE, eCO_MODULATE,
+	                      eCA_Texture | (eCA_Constant << 3),
+	                      eCA_Texture | (eCA_Constant << 3));
+	pRenderer->SetMaterialColor(224.0f / 255.0f, 96.0f / 255.0f,
+	                            32.0f / 255.0f, 1.0f);
+
+	pRenderer->DrawDynVB(v, inds, 4, 4, R_PRIMV_QUADS);
+
+	// Put the stage back to the fixed-function default. Leaving it set would
+	// make every later draw in the frame inherit it, which is exactly the kind
+	// of state leak this path makes possible now that it does something.
+	pRenderer->SetColorOp(eCO_MODULATE, eCO_MODULATE, DEF_TEXARG0, DEF_TEXARG0);
+
 	pRenderer->Set2DMode(false, nWidth, nHeight);
 }
 
@@ -268,12 +316,15 @@ static void PublishPixelSample(IRenderer* pRenderer)
 	const int nCentre = SAMPLE(0.30f, 0.30f);	// untextured, dynamic
 	const int nTex    = SAMPLE(0.70f, 0.30f);	// textured, dynamic
 	const int nStatic = SAMPLE(0.50f, 0.70f);	// static buffer
+	const int nConst  = SAMPLE(0.82f, 0.70f);	// SetColorOp + SetMaterialColor
 	const int nCorner = 0;
 
-	printf("[web] untextured %d,%d,%d  textured %d,%d,%d  static %d,%d,%d  corner %d,%d,%d\n",
+	printf("[web] untextured %d,%d,%d  textured %d,%d,%d  static %d,%d,%d  "
+	       "constant %d,%d,%d  corner %d,%d,%d\n",
 	       pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
 	       pPixels[nTex + 0], pPixels[nTex + 1], pPixels[nTex + 2],
 	       pPixels[nStatic + 0], pPixels[nStatic + 1], pPixels[nStatic + 2],
+	       pPixels[nConst + 0], pPixels[nConst + 1], pPixels[nConst + 2],
 	       pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2]);
 
 	// No commas inside the braced block: EM_ASM is a macro, and the
@@ -292,11 +343,15 @@ static void PublishPixelSample(IRenderer* pRenderer)
 		window.__cryStaticR = $9;
 		window.__cryStaticG = $10;
 		window.__cryStaticB = $11;
+		window.__cryConstR = $12;
+		window.__cryConstG = $13;
+		window.__cryConstB = $14;
 	},
 	pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
 	pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2],
 	pPixels[nTex + 0], pPixels[nTex + 1], pPixels[nTex + 2],
-	pPixels[nStatic + 0], pPixels[nStatic + 1], pPixels[nStatic + 2]);
+	pPixels[nStatic + 0], pPixels[nStatic + 1], pPixels[nStatic + 2],
+	pPixels[nConst + 0], pPixels[nConst + 1], pPixels[nConst + 2]);
 
 	free(pPixels);
 }
