@@ -1294,6 +1294,64 @@ table, so a passing case here says something about the WGSL path too — the onl
 evidence that path can get without an adapter. It says nothing about WGSL's own
 bindings and entry points, which remain unverified.
 
+## The render state was being thrown away
+
+`CRenderer::EF_SetState` does one thing: `m_CurState = st`. That is Crytek's
+own null-renderer implementation, which this backend inherits, and **nothing
+downstream of it ever touched GL**.
+
+So every call the engine makes was recorded and silently dropped. `CRESky`
+asking for `GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA`, CryFont asking for
+alpha blending to draw text, anything asking not to write depth — all ignored.
+
+The visible symptom is that everything draws opaque: black boxes around text, a
+sky that is a wall, nothing see-through that should be. It looks like a bug in
+whatever drew it, which is the wrong place to look.
+
+`GLESState.cpp` closes it, decoding through the same `CryStateGen` the WebGPU
+backend uses and turning the neutral enums into GL calls, one line each. The
+decision half stays testable without a context; only the GL half is here.
+
+### The cache, and what it cost
+
+The engine sets state per draw and most draws in a row want the same state, so
+the last word applied is remembered. Every GL call here crosses into
+JavaScript, so that is worth having.
+
+It also introduces a way to be wrong. Four places set the same GL state behind
+this file's back — the frame's clear forces the depth mask, 2D mode forces the
+depth test off, `PS2SetDefaultState` sets the whole pipeline, and the
+conformance run disables blending. Each now invalidates the cache. Without
+that, the next draw carrying an unchanged state word would be skipped as
+already-applied and would silently inherit whatever the other code left behind.
+
+### Verified by readback, and confirmed non-vacuous
+
+Five render-state cases run alongside the shader ones: each draws a background,
+then draws over it with the state under test, and reads back what the two
+produced together.
+
+The background and the source are **different colours** on purpose. An earlier
+draft drew the same quad twice, which made "the background survives" and "the
+source survives" the same expected value — so a state that never reached GL
+would have passed the case meant to prove it had.
+
+Confirmed by making `GLESState_Apply` a no-op:
+
+```
+FAIL additive blending sums with the background   (got 64,32,16,255 expected 192,160,144,255)
+FAIL zero source factor leaves the background     (got 64,32,16,255 expected 128,128,128,255)
+FAIL alpha-only colour mask leaves RGB alone      (got 64,32,16,255 expected 128,128,128,255)
+```
+
+All three return the source unchanged, which is exactly the signature of a
+dropped state.
+
+Two things are decoded and still not applied, deliberately. The **alpha test**
+has no GLES 3.0 state and is compiled into the fragment shader as a `discard`
+instead, from the same decoded description. **Stencil** has no buffer yet, and
+enabling the test against an absent attachment would discard everything.
+
 ### Next
 
 Feeding real `SShaderPass` data through this, which needs the engine to reach a

@@ -15,6 +15,7 @@
 
 #include "RenderPCH.h"
 #include "GLESRenderer.h"
+#include "GLESState.h"
 #include "GLESContext.h"
 
 #include <time.h>
@@ -228,6 +229,10 @@ void CGLESRenderer::PS2SetDefaultState()
 #if defined(__EMSCRIPTEN__)
 	if (!m_bContextCreated)
 		return;
+
+	// This sets the whole pipeline by hand, so nothing the state cache believes
+	// survives it.
+	GLESState_Invalidate();
 
 	glDisable(GL_BLEND);
 	glDisable(GL_STENCIL_TEST);

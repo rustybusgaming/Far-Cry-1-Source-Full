@@ -43,6 +43,7 @@
 
 #include "GLESShader.h"
 #include "GLESShaderGen.h"
+#include "GLESState.h"
 
 #include <GLES3/gl3.h>
 
@@ -320,6 +321,118 @@ static SConformCase CaseDetail()
 }
 
 //////////////////////////////////////////////////////////////////////////
+// RENDER STATE
+//
+// A different claim from everything above. The cases above ask "does the
+// generated shader compute the right colour"; these ask "does the engine's
+// GS_* word reach GL at all".
+//
+// It did not, until GLESState.cpp. CRenderer::EF_SetState records the word
+// into m_CurState and Crytek's null-renderer implementation -- which this
+// backend inherits -- does nothing else with it. Every call asking for alpha
+// blending drew opaque, and the symptom appears at the thing being drawn
+// rather than at the state that was dropped.
+//
+// Each case draws a known background, then draws the quad again with the
+// state under test, and reads back what the two produced together. A state
+// that is silently ignored gives the source colour unchanged, which is a
+// different answer from every expectation below -- so "dropped entirely" can
+// never pass.
+//////////////////////////////////////////////////////////////////////////
+
+struct SStateCase
+{
+	const char*		szName;
+	int				nRenderState;
+	unsigned char	expect[4];
+};
+
+//! The background every state case is drawn over, and the source drawn on top.
+//!
+//! They are DIFFERENT COLOURS, deliberately. An earlier draft drew the same
+//! quad twice, which made "the background survives" and "the source survives"
+//! the same expected value -- so a render state that never reached GL would
+//! have passed the case meant to prove it had.
+//!
+//!   background  the untextured pass, 128,128,128,255
+//!   source      the textured modulate pass, 64,32,16,255
+//!
+//! With those, a state that is dropped entirely gives the source unchanged and
+//! fails three of the five cases below.
+static const unsigned char kBackground[4] = { 128, 128, 128, 255 };
+static const unsigned char kSrc[4]        = {  64,  32,  16, 255 };
+
+static const int kNumStateCases = 5;
+
+//! The state the background is drawn with: depth writing on, no blending, all
+//! channels written. Whatever a case does afterwards, it starts from this.
+static int BackgroundState()
+{
+	return GS_DEPTHWRITE;
+}
+
+static SStateCase StateCase(int i)
+{
+	SStateCase c;
+
+	switch (i)
+	{
+	case 0:
+		// No blend bits at all. The engine's zero nibble means "no blending",
+		// which is NOT the same as GS_BLSRC_ZERO (0x1) -- conflating them
+		// would multiply every opaque surface by nothing and draw black.
+		c.szName = "no blend bits means no blending, not zero";
+		c.nRenderState = GS_DEPTHWRITE;
+		c.expect[0] = kSrc[0]; c.expect[1] = kSrc[1];
+		c.expect[2] = kSrc[2]; c.expect[3] = kSrc[3];
+		return c;
+
+	case 1:
+		// src*1 + dst*1.
+		//   64 + 128 = 192,  32 + 128 = 160,  16 + 128 = 144
+		c.szName = "additive blending sums with the background";
+		c.nRenderState = GS_DEPTHWRITE | GS_BLSRC_ONE | GS_BLDST_ONE;
+		c.expect[0] = 192; c.expect[1] = 160; c.expect[2] = 144; c.expect[3] = 255;
+		return c;
+
+	case 2:
+		// src*srcAlpha + dst*(1-srcAlpha), with srcAlpha 1.0 -- the source
+		// wins outright. The commonest blend in the engine, and the one
+		// CryFont and CRESky ask for.
+		c.szName = "source-alpha blending with an opaque source";
+		c.nRenderState = GS_DEPTHWRITE | GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA;
+		c.expect[0] = kSrc[0]; c.expect[1] = kSrc[1];
+		c.expect[2] = kSrc[2]; c.expect[3] = kSrc[3];
+		return c;
+
+	case 3:
+		// src*0 + dst*1: the source is thrown away and the background
+		// survives untouched. This is the case a dropped state cannot fake,
+		// since a dropped state draws the source.
+		c.szName = "zero source factor leaves the background";
+		c.nRenderState = GS_DEPTHWRITE | GS_BLSRC_ZERO | GS_BLDST_ONE;
+		c.expect[0] = kBackground[0]; c.expect[1] = kBackground[1];
+		c.expect[2] = kBackground[2]; c.expect[3] = kBackground[3];
+		return c;
+
+	default:
+		// Colour masking, over additive blending. GS_COLMASKONLYALPHA writes
+		// alpha and no colour, so the background's RGB survives while the
+		// alpha channel takes the blend.
+		//
+		// A mask applied BACKWARDS would write colour and not alpha, giving
+		// the additive result above -- which is why this case sits on top of
+		// additive blending rather than on top of nothing.
+		c.szName = "alpha-only colour mask leaves RGB alone";
+		c.nRenderState = GS_DEPTHWRITE | GS_COLMASKONLYALPHA
+		               | GS_BLSRC_ONE | GS_BLDST_ONE;
+		c.expect[0] = kBackground[0]; c.expect[1] = kBackground[1];
+		c.expect[2] = kBackground[2]; c.expect[3] = 255;
+		return c;
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////
 
 static GLuint MakeTexture(const unsigned char* pRGBA)
 {
@@ -341,22 +454,43 @@ static GLuint MakeTexture(const unsigned char* pRGBA)
 }
 
 //////////////////////////////////////////////////////////////////////////
-//! Run one case. Returns true if the pixel came back as expected.
+//! The quad, with the attribute numbering the generators emit.
 //////////////////////////////////////////////////////////////////////////
-static bool RunCase(const SConformCase& c, GLuint nTexA, GLuint nTexB,
-                    GLuint nVBO, std::string& sDetail)
+static void DrawQuad(GLuint nVBO)
 {
-	const SGLESProgram* pProgram = GLESShader_GetForPass(c.desc);
+	glBindBuffer(GL_ARRAY_BUFFER, nVBO);
 
+	// position vec3, colour 4 unsigned bytes normalised, uv vec2.
+	const GLsizei nStride = 3 * sizeof(float) + 4 + 2 * sizeof(float);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, nStride, (const void*)0);
+
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, nStride,
+	                      (const void*)(3 * sizeof(float)));
+
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, nStride,
+	                      (const void*)(3 * sizeof(float) + 4));
+
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! Select a pass's program and bind everything it needs. Returns 0 if the
+//! program would not build.
+//////////////////////////////////////////////////////////////////////////
+static const SGLESProgram* BindPass(const SCryPassDesc& desc,
+                                    GLuint nTexA, GLuint nTexB)
+{
+	const SGLESProgram* pProgram = GLESShader_GetForPass(desc);
 	if (!pProgram)
-	{
-		sDetail = "program did not build";
-		return false;
-	}
+		return 0;
 
 	glUseProgram(pProgram->nProgram);
 
-	// Identity transform: the quad below is already in clip space.
+	// Identity transform: the quad is already in clip space.
 	static const float kIdentity[16] =
 	{
 		1, 0, 0, 0,
@@ -385,28 +519,96 @@ static bool RunCase(const SConformCase& c, GLuint nTexA, GLuint nTexB,
 		glUniform1i(pProgram->nSamplers[nStage], nStage);
 	}
 
+	return pProgram;
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! Run one case. Returns true if the pixel came back as expected.
+//////////////////////////////////////////////////////////////////////////
+static bool RunCase(const SConformCase& c, GLuint nTexA, GLuint nTexB,
+                    GLuint nVBO, std::string& sDetail)
+{
+	if (!BindPass(c.desc, nTexA, nTexB))
+	{
+		sDetail = "program did not build";
+		return false;
+	}
+
+	// These cases are about the SHADER, so blending is off and the quad is the
+	// only thing in the target. The render-state cases below are the ones that
+	// care what was already there.
+	glDisable(GL_BLEND);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	GLESState_Invalidate();
+
 	glClearColor(kClear[0] / 255.0f, kClear[1] / 255.0f,
 	             kClear[2] / 255.0f, kClear[3] / 255.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	glBindBuffer(GL_ARRAY_BUFFER, nVBO);
+	DrawQuad(nVBO);
 
-	// position vec3, colour 4 unsigned bytes normalised, uv vec2 -- the same
-	// attribute numbering the generator emits.
-	const GLsizei nStride = 3 * sizeof(float) + 4 + 2 * sizeof(float);
+	unsigned char px[4] = { 0, 0, 0, 0 };
+	glReadPixels(2, 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
 
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, nStride, (const void*)0);
+	bool bOk = true;
+	for (int i = 0; i < 4; ++i)
+	{
+		const int nDiff = (int)px[i] - (int)c.expect[i];
+		if (nDiff > kTolerance || nDiff < -kTolerance)
+			bOk = false;
+	}
 
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, nStride,
-	                      (const void*)(3 * sizeof(float)));
+	char buf[192];
+	snprintf(buf, sizeof(buf), "got %d,%d,%d,%d expected %d,%d,%d,%d",
+	         px[0], px[1], px[2], px[3],
+	         c.expect[0], c.expect[1], c.expect[2], c.expect[3]);
+	sDetail = buf;
 
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, nStride,
-	                      (const void*)(3 * sizeof(float) + 4));
+	return bOk;
+}
 
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+//////////////////////////////////////////////////////////////////////////
+//! Run one render-state case.
+//!
+//! Two draws: the background with blending off, then the source with the state
+//! under test. What comes back is what the two produced together, so a state
+//! that never reached GL gives the source unchanged -- which three of the five
+//! expectations do not accept.
+//////////////////////////////////////////////////////////////////////////
+static bool RunStateCase(const SStateCase& c, GLuint nTexA, GLuint nTexB,
+                         GLuint nVBO, std::string& sDetail)
+{
+	//////////////////////////////////////////////////////////////////////
+	// The background: the untextured pass, drawn opaque.
+	//////////////////////////////////////////////////////////////////////
+	if (!BindPass(CaseUntextured().desc, nTexA, nTexB))
+	{
+		sDetail = "background program did not build";
+		return false;
+	}
+
+	GLESState_Apply(BackgroundState());
+
+	glClearColor(kClear[0] / 255.0f, kClear[1] / 255.0f,
+	             kClear[2] / 255.0f, kClear[3] / 255.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	DrawQuad(nVBO);
+
+	//////////////////////////////////////////////////////////////////////
+	// The source, with the state being tested. Applied through the same
+	// GLESState_Apply the draw path uses -- testing a private copy of the
+	// translation would prove nothing about what the engine gets.
+	//////////////////////////////////////////////////////////////////////
+	if (!BindPass(CaseModulate().desc, nTexA, nTexB))
+	{
+		sDetail = "source program did not build";
+		return false;
+	}
+
+	GLESState_Apply(c.nRenderState);
+
+	DrawQuad(nVBO);
 
 	unsigned char px[4] = { 0, 0, 0, 0 };
 	glReadPixels(2, 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
@@ -479,6 +681,10 @@ bool GLESConform_Run(int& nPassed, int& nTotal)
 	glDisable(GL_BLEND);
 	glDisable(GL_CULL_FACE);
 
+	// Set behind GLESState's back, so its cache must not be trusted after
+	// this runs. Invalidated at the end too -- see the teardown.
+	GLESState_Invalidate();
+
 	//////////////////////////////////////////////////////////////////////
 	// A quad covering clip space, with the colour packed the way the engine
 	// packs it.
@@ -537,6 +743,32 @@ bool GLESConform_Run(int& nPassed, int& nTotal)
 	}
 
 	//////////////////////////////////////////////////////////////////////
+	// The render-state cases. A different claim: not what the shader computes,
+	// but whether the engine's GS_* word reaches GL at all.
+	//////////////////////////////////////////////////////////////////////
+
+	iLog->Log("XRenderGLES: render-state conformance, %d cases", kNumStateCases);
+
+	for (int i = 0; i < kNumStateCases; ++i)
+	{
+		const SStateCase c = StateCase(i);
+
+		std::string sDetail;
+		const bool bOk = RunStateCase(c, nTexA, nTexB, nVBO, sDetail);
+
+		++nTotal;
+		if (bOk)
+		{
+			++nPassed;
+			iLog->Log("  ok   %s (%s)", c.szName, sDetail.c_str());
+		}
+		else
+		{
+			iLog->LogError("  FAIL %s (%s)", c.szName, sDetail.c_str());
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &nFBO);
@@ -547,6 +779,10 @@ bool GLESConform_Run(int& nPassed, int& nTotal)
 
 	glActiveTexture(GL_TEXTURE0);
 	glUseProgram(0);
+
+	// The engine's next draw must re-apply everything: this run left blend,
+	// depth and the viewport wherever its last case put them.
+	GLESState_Invalidate();
 
 	return nPassed == nTotal;
 }

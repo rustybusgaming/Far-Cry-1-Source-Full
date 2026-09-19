@@ -260,6 +260,7 @@ if(EMSCRIPTEN)
         XRenderGLES/GLESShader.cpp
         XRenderGLES/GLESShaderGen.cpp
         XRenderGLES/GLESConform.cpp
+        XRenderGLES/GLESState.cpp
         XRenderGLES/GLESDraw.cpp
         XRenderGLES/GLESTexture.cpp
         XRenderGLES/GLESVertexBuffer.cpp

@@ -10,6 +10,7 @@
 
 #include "RenderPCH.h"
 #include "GLESRenderer.h"
+#include "GLESState.h"
 #include "GLESContext.h"
 
 #include <stdlib.h>
@@ -51,6 +52,10 @@ void CGLESRenderer::BeginFrame()
 	glClearColor(m_fClearColor[0], m_fClearColor[1], m_fClearColor[2], m_fClearColor[3]);
 	glClearDepthf(1.0f);
 	glClearStencil(0);
+	// Forcing the depth mask for the clear contradicts the state cache, so the
+	// next draw must re-apply rather than trust it.
+	GLESState_Invalidate();
+
 	glDepthMask(GL_TRUE);	// glClear ignores the depth buffer while the depth
 							// mask is off, which is a classic way to lose the
 							// clear without any error being reported
@@ -118,6 +123,10 @@ void CGLESRenderer::ClearDepthBuffer()
 #if defined(__EMSCRIPTEN__)
 	if (!GLESContext_IsCreated())
 		return;
+
+	// As in BeginFrame: forcing the mask for the clear puts GL out of step with
+	// the state cache, so the next draw has to re-apply.
+	GLESState_Invalidate();
 
 	glDepthMask(GL_TRUE);
 	glClearDepthf(1.0f);

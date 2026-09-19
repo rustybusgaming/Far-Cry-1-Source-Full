@@ -31,6 +31,7 @@
 #include "GLESRenderer.h"
 #include "GLESContext.h"
 #include "GLESShader.h"
+#include "GLESState.h"
 #include "GLESTexture.h"
 
 #include <map>
@@ -381,6 +382,11 @@ void CGLESRenderer::DrawBuffer(CVertexBuffer* src, SVertexStream* indicies,
 
 	if (pProgram->nMVP >= 0)
 		glUniformMatrix4fv(pProgram->nMVP, 1, GL_FALSE, m_matMVP);
+
+	// The engine's render state. EF_SetState only ever recorded it into
+	// m_CurState -- this is where it reaches GL. Everything that asked for
+	// alpha blending drew opaque until it did.
+	GLESState_Apply(m_CurState);
 
 	// Point each stage's sampler at its texture unit. Only stage 0 is ever
 	// bound today -- the engine's multi-texture paths do not reach here yet --
