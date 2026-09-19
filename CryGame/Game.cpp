@@ -10,7 +10,7 @@
 //
 //////////////////////////////////////////////////////////////////////
  
-#include "stdafx.h"
+#include "StdAfx.h"
 #include <IStreamEngine.h>
 #include <ICryPak.h>
 #include "Game.h"
@@ -765,7 +765,7 @@ bool CXGame::Run(bool &bRelaunch)
 
 #if !defined(_XBOX) && !defined(PS2) && !defined(LINUX)
 #include <Mmsystem.h>
-#include ".\game.h"
+#include "./Game.h"
 #pragma comment (lib , "Winmm.lib")
 #else
 #define GetCurrentTime() ((unsigned int)(GetSystem()->GetITimer()->GetCurrTime() * 1000.f))

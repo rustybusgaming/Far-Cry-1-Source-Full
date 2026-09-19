@@ -9,7 +9,7 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #if defined LINUX
 #include <unistd.h>   // [webport] was <sys/io.h>; see CrySystem/StdAfx.h
 #else
@@ -21,7 +21,7 @@
 #include "UIHud.h"
 #include "ScriptObjectRenderer.h"
 #include "PlayerSystem.h"
-#include "Xplayer.h"
+#include "XPlayer.h"
 #include "Spectator.h"
 #include "IngameDialog.h"
 #include "XSystemBase.h"
