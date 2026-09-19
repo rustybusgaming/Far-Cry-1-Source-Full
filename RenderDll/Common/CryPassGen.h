@@ -8,9 +8,20 @@
 
 	The WebGL2 and WebGPU backends both have to reproduce the same
 	fixed-function model, and the interesting part of that is not syntax: it is
-	deciding what eCO_DOTPRODUCT3 means, that eCO_DETAIL is MODULATE2X in this
-	engine's usage, that stage 0's "previous" is the diffuse colour, and which
-	operations cannot be expressed at all and must be refused.
+	deciding what eCO_DOTPRODUCT3 means, that eCO_DETAIL is a plain modulate in
+	this engine whatever the name suggests, that stage 0's "previous" is the
+	diffuse colour, and which operations cannot be expressed at all and must be
+	refused.
+
+	WHERE THOSE DECISIONS COME FROM
+
+	Not from what the operation names mean elsewhere. Four of them were
+	translated from the name and were wrong -- eCO_DECAL is a plain select in
+	this engine, eCO_LERP interpolates by a third argument rather than an alpha,
+	eCO_DETAIL does not double, and eCO_MULTIPLYADD was refused for want of an
+	argument the engine does in fact pack. The authority is what the shipped
+	backends do with the token: XRenderD3D9/D3DRendPipeline.cpp maps each one to
+	a D3DTOP_*, and that mapping is the specification.
 
 	Written twice, those decisions drift. One backend gets a fix and the other
 	does not, and because the two run on different machines -- WebGPU cannot

@@ -83,15 +83,62 @@ struct SCryPassDesc
 		, nAlphaTest(eCryAlphaTest_None), fAlphaRef(0.0f) {}
 };
 
-//! Unpack the two arguments the engine packs into one int.
-//! The engine writes these as "arg0 | (arg1 << 3)" and masks them with ~7 and
-//! ~(7<<3), so three bits each.
+//! Unpack the THREE arguments the engine packs into one int.
+//!
+//! ShaderParse.cpp writes them as "arg0 | (arg1 << 3) | (arg2 << 6)", masking
+//! with ~7, ~(7<<3) and ~(7<<6) -- three bits each. The shipped Direct3D 9
+//! backend reads all three: bits 0-2 become D3DTSS_COLORARG1, bits 3-5
+//! COLORARG2, and bits 6-8 COLORARG0.
+//!
+//! A THIRD ARGUMENT EXISTS, AND THIS FILE USED TO SAY IT DID NOT
+//!
+//! The first version of the translation claimed SShaderTexUnit packed only
+//! two, and refused eCO_MULTIPLYADD on that basis. It was wrong, and reading
+//! D3DRendPipeline.cpp is what showed it: that backend sets three stage
+//! arguments per stage, from one byte.
+//!
+//! THE THIRD ONE IS TRUNCATED, IN THE ORIGINAL ENGINE
+//!
+//! m_eColorArg and m_eAlphaArg are declared byte, so "arg2 << 6" keeps only
+//! bits 6 and 7. eCA_Constant is 4, and 4 << 6 is 256 -- entirely outside a
+//! byte, so a shader script asking for Constant as its third argument gets
+//! eCA_Specular (0) instead, silently. The Direct3D backend's
+//! "case eCA_Constant" in its third-argument switch is unreachable.
+//!
+//! That is not a bug introduced here and it is not corrected here. A shader
+//! written for Far Cry was authored against the engine that truncates, so
+//! reproducing the truncation is what renders what the artist saw. Reading
+//! straight from the byte, as CryPass_FromTexUnit does, reproduces it exactly.
 inline int CryPass_Arg0(int nPacked) { return nPacked & 7; }
 inline int CryPass_Arg1(int nPacked) { return (nPacked >> 3) & 7; }
+inline int CryPass_Arg2(int nPacked) { return (nPacked >> 6) & 7; }
 
 //! Name of an operation, for diagnostics. Returns "eCO_<unknown>" if
 //! unrecognised.
 const char* CryPass_OpName(int nOp);
+
+//! Build a stage description from one of the engine's own texture units.
+//!
+//! Takes the fields rather than SShaderTexUnit itself, so this header does not
+//! have to reach into RenderDll/Common/Shaders/Shader.h -- which would drag the
+//! whole renderer in and stop any of this compiling natively. The caller does
+//! the one-line unpack; see CryPass_FromTexUnit's note in the .cpp.
+//!
+//! nColorArg and nAlphaArg are the engine's PACKED bytes, passed through
+//! unchanged. Passing the byte rather than the unpacked arguments is what
+//! reproduces the third-argument truncation described above.
+void CryPass_FromTexUnit(int nColorOp, int nColorArg,
+                         int nAlphaOp, int nAlphaArg,
+                         bool bHasTexture, SCryStageDesc& out);
+
+//! Fill in a pass's alpha test from the engine's GS_* render-state word.
+//!
+//! The descriptor has carried nAlphaTest and fAlphaRef since the beginning and
+//! nothing ever set them from engine data -- every pass built by hand in a test
+//! or by GLESShader_DynamicPass had no alpha test, so the field was exercised
+//! only by tests. This is the join that was missing.
+void CryPass_SetAlphaTestFromRenderState(unsigned int nRenderState,
+                                         SCryPassDesc& out);
 
 //! A stable key for the description, so identical passes share one compiled
 //! program or pipeline.

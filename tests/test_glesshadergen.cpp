@@ -254,6 +254,13 @@ static void TestBothLanguagesAgree()
 		{ eCO_ADDSIGNED,  "(texel0 + diffuse - 0.5)", "addsigned"  },
 		{ eCO_REPLACE,    "texel0",                   "replace"    },
 		{ eCO_ARG2,       "diffuse",                  "arg2"       },
+		// The three-argument operations, corrected against the shipped
+		// Direct3D 9 backend. DEF_TEXARG0 leaves the third slot at 0, which is
+		// eCA_Specular, so these read "specular" as their third argument.
+		{ eCO_MULTIPLYADD, "(texel0 + diffuse * specular)", "multiplyadd" },
+		{ eCO_LERP,        "mix(diffuse, texel0, specular)", "lerp"       },
+		{ eCO_DECAL,       "texel0",                   "decal"      },
+		{ eCO_DETAIL,      "(texel0 * diffuse)",       "detail"     },
 	};
 
 	for (int i = 0; i < (int)(sizeof(kCases) / sizeof(kCases[0])); ++i)
@@ -276,9 +283,11 @@ static void TestBothLanguagesAgree()
 
 	// And they must refuse the same things. A backend that quietly accepted an
 	// operation the other rejects would render differently rather than fail.
-	static const int kUnsupported[] = { eCO_MULTIPLYADD, eCO_BUMPENVMAP, eCO_BLEND };
+	// eCO_MULTIPLYADD is no longer here: the engine packs the third argument it
+	// needs. Both languages now express it, which the table above checks.
+	static const int kUnsupported[] = { eCO_BUMPENVMAP, eCO_BLEND };
 
-	for (int i = 0; i < 3; ++i)
+	for (int i = 0; i < 2; ++i)
 	{
 		SCryPassDesc desc = ModulateDesc();
 		desc.stages[0].nColorOp = kUnsupported[i];

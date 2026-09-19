@@ -72,7 +72,7 @@ static std::string ArgExpr(int nArg, int nStage, const SCryShaderDialect& d)
 //! Returns false for an operation that needs something this layer does not
 //! have. See the note in the header about not guessing.
 //////////////////////////////////////////////////////////////////////////
-static bool OpExpr(int nOp, const char* szA0, const char* szA1,
+static bool OpExpr(int nOp, const char* szA0, const char* szA1, const char* szA2,
                    const char* szTexel, const SCryShaderDialect& d,
                    std::string& sOut, std::string& sError)
 {
@@ -119,10 +119,14 @@ static bool OpExpr(int nOp, const char* szA0, const char* szA1,
 		snprintf(buf, sizeof(buf), "((%s + %s - 0.5) * 2.0)", szA0, szA1);
 		break;
 
-	// DETAIL is MODULATE2X by another name in this engine's usage: a detail map
-	// centred on 0.5 that brightens and darkens the base.
+	// DETAIL was translated as MODULATE2X here, on the reasonable-looking
+	// assumption that a detail map is centred on 0.5 and meant to brighten and
+	// darken. That is what a detail map usually is, and it is not what this
+	// engine does with the token: eCO_DETAIL appears in NO shipped backend.
+	// Both the Direct3D 9 and OpenGL pipelines fall through to their default,
+	// which is a plain modulate. Matching the engine beats matching the name.
 	case eCO_DETAIL:
-		snprintf(buf, sizeof(buf), "(%s * %s * 2.0)", szA0, szA1);
+		snprintf(buf, sizeof(buf), "(%s * %s)", szA0, szA1);
 		break;
 
 	case eCO_BLENDDIFFUSEALPHA:
@@ -133,15 +137,35 @@ static bool OpExpr(int nOp, const char* szA0, const char* szA1,
 		snprintf(buf, sizeof(buf), "mix(%s, %s, %s.a)", szA1, szA0, szTexel);
 		break;
 
-	// DECAL lays the texture over what came before, using the texture's own
-	// alpha as the coverage.
+	// DECAL was translated as "lay the texture over what came before, using its
+	// own alpha as coverage", which is what the word means in most APIs. It is
+	// not what this engine does: D3DRendPipeline.cpp puts eCO_DECAL in the SAME
+	// case as eCO_REPLACE, mapping both to D3DTOP_SELECTARG1. It selects the
+	// first argument and ignores the rest.
+	//
+	// The old translation blended against the accumulator, so any pass using it
+	// came out somewhere between the two -- plausible on screen, and wrong.
 	case eCO_DECAL:
-		snprintf(buf, sizeof(buf), "mix(acc, %s, %s.a)", szTexel, szTexel);
+		snprintf(buf, sizeof(buf), "%s", szA0);
 		break;
 
+	// D3DTOP_LERP is "Arg0 * Arg1 + (1 - Arg0) * Arg2", and the engine's Arg0 is
+	// the THIRD packed argument -- so the interpolation factor is a whole
+	// colour, per channel, not the first argument's alpha as this used to
+	// assume. With only two arguments to hand there was nothing else it could
+	// have used; with three there is no need to guess.
 	case eCO_LERP:
-		// Interpolates between the two arguments by the first one's alpha.
-		snprintf(buf, sizeof(buf), "mix(%s, %s, (%s).a)", szA1, szA0, szA0);
+		snprintf(buf, sizeof(buf), "mix(%s, %s, %s)", szA1, szA0, szA2);
+		break;
+
+	// D3DTOP_MULTIPLYADD is "Arg1 + Arg2 * Arg0". In the engine's packing that
+	// is the first argument plus the second times the third.
+	//
+	// This was refused outright until the third argument was found -- see the
+	// note in CryPassDesc.h. It is supported now because the data to do it
+	// correctly is there, not because the refusal was ever softened.
+	case eCO_MULTIPLYADD:
+		snprintf(buf, sizeof(buf), "(%s + %s * %s)", szA0, szA1, szA2);
 		break;
 
 	// The classic bump-mapping dot product. Both arguments are biased out of
@@ -181,10 +205,6 @@ static bool OpExpr(int nOp, const char* szA0, const char* szA1,
 	// given, and inventing a value would produce a shader that looks
 	// plausible and computes the wrong thing.
 	//////////////////////////////////////////////////////////////////////
-	case eCO_MULTIPLYADD:
-		sError = "eCO_MULTIPLYADD takes three arguments; SShaderTexUnit packs only two";
-		return false;
-
 	case eCO_BUMPENVMAP:
 		sError = "eCO_BUMPENVMAP needs the stage's bump matrix, which is not part "
 		         "of the stage description";
@@ -280,11 +300,13 @@ bool CryPassGen_Body(const SCryPassDesc& desc, const SCryShaderDialect& d,
 
 		const std::string sC0 = ArgExpr(CryPass_Arg0(st.nColorArg), i, d);
 		const std::string sC1 = ArgExpr(CryPass_Arg1(st.nColorArg), i, d);
+		const std::string sC2 = ArgExpr(CryPass_Arg2(st.nColorArg), i, d);
 		const std::string sA0 = ArgExpr(CryPass_Arg0(st.nAlphaArg), i, d);
 		const std::string sA1 = ArgExpr(CryPass_Arg1(st.nAlphaArg), i, d);
+		const std::string sA2 = ArgExpr(CryPass_Arg2(st.nAlphaArg), i, d);
 
-		if (!OpExpr(st.nColorOp, sC0.c_str(), sC1.c_str(), sTexel.c_str(), d,
-		            sColor, sError))
+		if (!OpExpr(st.nColorOp, sC0.c_str(), sC1.c_str(), sC2.c_str(),
+		            sTexel.c_str(), d, sColor, sError))
 		{
 			char err[256];
 			snprintf(err, sizeof(err), "stage %d colour: %s", i, sError.c_str());
@@ -292,8 +314,8 @@ bool CryPassGen_Body(const SCryPassDesc& desc, const SCryShaderDialect& d,
 			return false;
 		}
 
-		if (!OpExpr(st.nAlphaOp, sA0.c_str(), sA1.c_str(), sTexel.c_str(), d,
-		            sAlpha, sError))
+		if (!OpExpr(st.nAlphaOp, sA0.c_str(), sA1.c_str(), sA2.c_str(),
+		            sTexel.c_str(), d, sAlpha, sError))
 		{
 			char err[256];
 			snprintf(err, sizeof(err), "stage %d alpha: %s", i, sError.c_str());

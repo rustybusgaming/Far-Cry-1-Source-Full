@@ -222,6 +222,104 @@ static SConformCase CaseAlphaTestDiscards()
 }
 
 //////////////////////////////////////////////////////////////////////////
+// The three-argument operations.
+//
+// Every one of these was translated WRONGLY until the shipped Direct3D 9
+// backend was read properly, and every one of them produced something
+// plausible on screen while doing it. They are here because "plausible and
+// wrong" is exactly what a pixel test catches and an assertion about emitted
+// text does not.
+//
+// All four use eCA_Previous as their third argument rather than eCA_Constant.
+// That is not arbitrary: the engine packs the third argument into a byte at
+// bits 6-8, so eCA_Constant (4 << 6 = 256) cannot survive and no real shader
+// can ask for it. Testing a configuration the engine cannot express would be
+// testing nothing. At stage 0 "previous" is the diffuse colour.
+//////////////////////////////////////////////////////////////////////////
+
+//! Arguments shared by the four: texture, then diffuse, then previous.
+static int ThreeArgs()
+{
+	return eCA_Texture | (eCA_Diffuse << 3) | (eCA_Previous << 6);
+}
+
+//! Shape shared by the four: one texture, alpha replaced by the texture's.
+static SCryPassDesc ThreeArgDesc(int nColorOp)
+{
+	SCryPassDesc desc;
+	desc.nStages = 1;
+	desc.stages[0].bHasTexture = true;
+	desc.stages[0].nColorOp  = nColorOp;
+	desc.stages[0].nColorArg = ThreeArgs();
+	desc.stages[0].nAlphaOp  = eCO_REPLACE;
+	desc.stages[0].nAlphaArg = eCA_Texture;
+	return desc;
+}
+
+//! D3DTOP_MULTIPLYADD: Arg1 + Arg2 * Arg0, which in the engine's packing is
+//! first + second * third. Refused outright until the third argument was
+//! found.
+//!
+//!   0.50196 + 0.50196 * 0.50196 = 0.75392 -> 192
+//!   0.25098 + 0.50196 * 0.50196 = 0.50294 -> 128
+//!   0.12549 + 0.50196 * 0.50196 = 0.37745 -> 96
+static SConformCase CaseMultiplyAdd()
+{
+	SConformCase c;
+	c.szName = "multiply-add, reading the third argument";
+	c.desc   = ThreeArgDesc(eCO_MULTIPLYADD);
+
+	c.expect[0] = 192; c.expect[1] = 128; c.expect[2] = 96; c.expect[3] = 255;
+	return c;
+}
+
+//! D3DTOP_LERP: Arg0 * Arg1 + (1 - Arg0) * Arg2 -- the factor is the third
+//! argument, a whole colour. This used to interpolate by the FIRST argument's
+//! alpha, which with an opaque texture meant it returned that argument
+//! unchanged and looked like a working select.
+//!
+//!   mix(0.50196, 0.50196, 0.50196) = 0.50196 -> 128
+//!   mix(0.50196, 0.25098, 0.50196) = 0.37598 -> 96
+//!   mix(0.50196, 0.12549, 0.50196) = 0.31299 -> 80
+static SConformCase CaseLerp()
+{
+	SConformCase c;
+	c.szName = "lerp, interpolating by the third argument";
+	c.desc   = ThreeArgDesc(eCO_LERP);
+
+	c.expect[0] = 128; c.expect[1] = 96; c.expect[2] = 80; c.expect[3] = 255;
+	return c;
+}
+
+//! eCO_DECAL shares a case with eCO_REPLACE in the Direct3D backend -- both
+//! are D3DTOP_SELECTARG1. It used to be translated as a texture-alpha blend
+//! against the accumulator, which is what "decal" means almost everywhere
+//! else, and which put every pass using it somewhere between two colours.
+static SConformCase CaseDecal()
+{
+	SConformCase c;
+	c.szName = "decal selects its first argument";
+	c.desc   = ThreeArgDesc(eCO_DECAL);
+
+	c.expect[0] = 128; c.expect[1] = 64; c.expect[2] = 32; c.expect[3] = 255;
+	return c;
+}
+
+//! eCO_DETAIL is in no shipped backend's switch, so it lands on their default,
+//! which is a plain modulate. It used to be translated as modulate2x, on the
+//! strength of what a detail map usually is -- twice as bright as the engine
+//! makes it.
+static SConformCase CaseDetail()
+{
+	SConformCase c;
+	c.szName = "detail is a plain modulate";
+	c.desc   = ThreeArgDesc(eCO_DETAIL);
+
+	c.expect[0] = 64; c.expect[1] = 32; c.expect[2] = 16; c.expect[3] = 255;
+	return c;
+}
+
+//////////////////////////////////////////////////////////////////////////
 
 static GLuint MakeTexture(const unsigned char* pRGBA)
 {
@@ -269,10 +367,13 @@ static bool RunCase(const SConformCase& c, GLuint nTexA, GLuint nTexB,
 	if (pProgram->nMVP >= 0)
 		glUniformMatrix4fv(pProgram->nMVP, 1, GL_FALSE, kIdentity);
 
-	// A constant colour no case reads, set anyway so the uniform is not left
-	// at whatever the driver defaulted it to.
+	// No case reads the constant colour -- the engine cannot pack eCA_Constant
+	// as a third argument, and none of these name it elsewhere. It is set to
+	// magenta rather than white precisely so that a generator emitting it by
+	// mistake produces something unmistakable instead of a plausible result
+	// that a tolerance might swallow.
 	if (pProgram->nConstColor >= 0)
-		glUniform4f(pProgram->nConstColor, 1.0f, 1.0f, 1.0f, 1.0f);
+		glUniform4f(pProgram->nConstColor, 1.0f, 0.0f, 1.0f, 1.0f);
 
 	for (int nStage = 0; nStage < pProgram->nStages; ++nStage)
 	{
@@ -334,15 +435,19 @@ bool GLESConform_Run(int& nPassed, int& nTotal)
 	nPassed = 0;
 	nTotal  = 0;
 
-	SConformCase cases[6];
+	SConformCase cases[10];
 	cases[0] = CaseModulate();
 	cases[1] = CaseUntextured();
 	cases[2] = CaseTwoStageModulate();
 	cases[3] = CaseTwoStageAdd();
 	cases[4] = CaseAlphaTestKeeps();
 	cases[5] = CaseAlphaTestDiscards();
+	cases[6] = CaseMultiplyAdd();
+	cases[7] = CaseLerp();
+	cases[8] = CaseDecal();
+	cases[9] = CaseDetail();
 
-	const int kNumCases = 6;
+	const int kNumCases = 10;
 
 	//////////////////////////////////////////////////////////////////////
 	// An off-screen target, so this neither reads nor disturbs the canvas.

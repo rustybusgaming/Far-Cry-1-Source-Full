@@ -197,9 +197,12 @@ static void TestTwoStagesChain()
 //////////////////////////////////////////////////////////////////////////
 static void TestUnsupportedOpsAreRejected()
 {
-	const int kUnsupported[] = { eCO_MULTIPLYADD, eCO_BUMPENVMAP, eCO_BLEND };
+	// eCO_MULTIPLYADD was on this list, wrongly: it needs a third argument and
+	// the engine packs one, at bits 6-8. See TestThreeArgumentOps.
+	const int kUnsupported[] = { eCO_BUMPENVMAP, eCO_BLEND };
+	const int kNumUnsupported = 2;
 
-	for (int i = 0; i < 3; ++i)
+	for (int i = 0; i < kNumUnsupported; ++i)
 	{
 		SCryPassDesc desc;
 		desc.nStages = 1;
@@ -352,6 +355,96 @@ static void TestUntexturedStage()
 	CheckWellFormed(sWGSL, "untextured stage");
 }
 
+//////////////////////////////////////////////////////////////////////////
+//! The operations that read the engine's THIRD packed argument.
+//!
+//! Every one of these was wrong until the shipped Direct3D 9 backend was read
+//! properly. They are asserted against what D3DRendPipeline.cpp actually does,
+//! which is the only authority available -- the shader scripts that exercise
+//! them are game assets and are not in this tree.
+//////////////////////////////////////////////////////////////////////////
+static void TestThreeArgumentOps()
+{
+	// arg0 = texture, arg1 = diffuse, arg2 = constant colour.
+	const int nArgs = eCA_Texture | (eCA_Diffuse << 3) | (eCA_Constant << 6);
+
+	CHECK(CryPass_Arg0(nArgs) == eCA_Texture,  "packed arg0 unpacks");
+	CHECK(CryPass_Arg1(nArgs) == eCA_Diffuse,  "packed arg1 unpacks");
+	CHECK(CryPass_Arg2(nArgs) == eCA_Constant, "packed arg2 unpacks");
+
+	SCryPassDesc desc;
+	desc.nStages = 1;
+	desc.stages[0].bHasTexture = true;
+	desc.stages[0].nAlphaOp  = eCO_REPLACE;
+	desc.stages[0].nAlphaArg = eCA_Texture;
+
+	std::string sWGSL, sError;
+
+	// D3DTOP_MULTIPLYADD is "Arg1 + Arg2 * Arg0", and the engine's Arg0 is the
+	// third packed slot -- so first + second * third.
+	desc.stages[0].nColorOp  = eCO_MULTIPLYADD;
+	desc.stages[0].nColorArg = nArgs;
+	CHECK(WGPUShaderGen_Build(desc, sWGSL, sError),
+	      "eCO_MULTIPLYADD builds now that the third argument is known");
+	CHECK(Has(sWGSL, "(texel0 + diffuse * uConst.color)"),
+	      "eCO_MULTIPLYADD is first + second * third");
+	CheckWellFormed(sWGSL, "multiply-add");
+
+	// D3DTOP_LERP is "Arg0 * Arg1 + (1 - Arg0) * Arg2" -- the factor is the
+	// third argument, a whole colour, not the first argument's alpha.
+	desc.stages[0].nColorOp = eCO_LERP;
+	CHECK(WGPUShaderGen_Build(desc, sWGSL, sError), "eCO_LERP builds");
+	CHECK(Has(sWGSL, "mix(diffuse, texel0, uConst.color)"),
+	      "eCO_LERP interpolates by the third argument");
+	CHECK(!Has(sWGSL, "mix(diffuse, texel0, (texel0).a)"),
+	      "eCO_LERP no longer interpolates by the first argument's alpha");
+
+	// eCO_DECAL shares a case with eCO_REPLACE in the Direct3D backend: both
+	// are D3DTOP_SELECTARG1. It does not blend against anything.
+	desc.stages[0].nColorOp = eCO_DECAL;
+	CHECK(WGPUShaderGen_Build(desc, sWGSL, sError), "eCO_DECAL builds");
+	CHECK(Has(sWGSL, "let c0 = texel0;"), "eCO_DECAL selects its first argument");
+	CHECK(!Has(sWGSL, "mix(acc"), "eCO_DECAL does not blend against the accumulator");
+
+	// eCO_DETAIL appears in no shipped backend, so it reaches their default,
+	// which is a plain modulate rather than the modulate2x the name suggests.
+	desc.stages[0].nColorOp = eCO_DETAIL;
+	CHECK(WGPUShaderGen_Build(desc, sWGSL, sError), "eCO_DETAIL builds");
+	CHECK(Has(sWGSL, "let c0 = (texel0 * diffuse);"),
+	      "eCO_DETAIL is a plain modulate, as the engine's default makes it");
+	CHECK(!Has(sWGSL, "(texel0 * diffuse * 2.0)"),
+	      "eCO_DETAIL is not modulate2x");
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! The engine truncates the third argument, and so must this.
+//!
+//! m_eColorArg is a byte, so "eCA_Constant << 6" -- 256 -- does not fit and is
+//! lost. A shader asking for the constant colour as its third argument gets
+//! eCA_Specular instead. That happens in Crytek's parser, not here; the point
+//! of this test is that reading from the byte reproduces it rather than
+//! quietly "fixing" a shader into rendering something its author never saw.
+//////////////////////////////////////////////////////////////////////////
+static void TestThirdArgumentTruncation()
+{
+	const unsigned char byPacked =
+		(unsigned char)(eCA_Texture | (eCA_Diffuse << 3) | (eCA_Constant << 6));
+
+	CHECK(CryPass_Arg2((int)byPacked) == eCA_Specular,
+	      "eCA_Constant as the third argument truncates to eCA_Specular");
+
+	// The three that do survive a byte.
+	for (int nArg = eCA_Specular; nArg <= eCA_Previous; ++nArg)
+	{
+		const unsigned char byRound = (unsigned char)(nArg << 6);
+
+		char what[128];
+		snprintf(what, sizeof(what),
+		         "third argument %d survives the byte", nArg);
+		CHECK(CryPass_Arg2((int)byRound) == nArg, what);
+	}
+}
+
 int main()
 {
 	TestArgPacking();
@@ -363,6 +456,8 @@ int main()
 	TestAlphaTestBecomesDiscard();
 	TestKeyDistinguishesDescriptions();
 	TestUntexturedStage();
+	TestThreeArgumentOps();
+	TestThirdArgumentTruncation();
 
 	if (g_nFailures)
 	{

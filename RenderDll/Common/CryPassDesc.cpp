@@ -17,6 +17,55 @@
 #include <string.h>
 
 //////////////////////////////////////////////////////////////////////////
+//! One texture unit -> one stage description.
+//!
+//! Deliberately trivial, and deliberately NOT taking SShaderTexUnit: that
+//! struct lives behind RenderDll/Common/Shaders/Shader.h, which pulls in the
+//! renderer and would make every generator untestable natively. The caller
+//! writes
+//!
+//!     CryPass_FromTexUnit(tu.m_eColorOp, tu.m_eColorArg,
+//!                         tu.m_eAlphaOp, tu.m_eAlphaArg,
+//!                         tu.m_ITexPic != 0, desc.stages[i]);
+//!
+//! which is the whole of the dependency, in the backend where it belongs.
+//!
+//! The arguments arrive as the engine's packed bytes and are stored as-is, so
+//! the third-argument truncation the engine performs is preserved rather than
+//! repaired. See the note in the header.
+//////////////////////////////////////////////////////////////////////////
+void CryPass_FromTexUnit(int nColorOp, int nColorArg,
+                         int nAlphaOp, int nAlphaArg,
+                         bool bHasTexture, SCryStageDesc& out)
+{
+	out.nColorOp     = nColorOp;
+	out.nColorArg    = nColorArg;
+	out.nAlphaOp     = nAlphaOp;
+	out.nAlphaArg    = nAlphaArg;
+	out.bHasTexture  = bHasTexture;
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! The alpha test, from the render-state word the pass carries.
+//!
+//! CryStateGen already decodes the whole word; this takes the two fields a
+//! SHADER needs, because neither WebGL2 nor WebGPU has alpha-test state and
+//! the test therefore has to be compiled into the fragment shader. The rest of
+//! the decoded state -- blend, depth, colour mask -- is pipeline state and
+//! stays out of the description, or two passes differing only in blend mode
+//! would need two compiled programs for no reason.
+//////////////////////////////////////////////////////////////////////////
+void CryPass_SetAlphaTestFromRenderState(unsigned int nRenderState,
+                                         SCryPassDesc& out)
+{
+	SCryStateDesc state;
+	CryStateGen_Decode((int)nRenderState, state);
+
+	out.nAlphaTest = state.eAlphaTest;
+	out.fAlphaRef  = state.fAlphaRef;
+}
+
+//////////////////////////////////////////////////////////////////////////
 
 const char* CryPass_OpName(int nOp)
 {

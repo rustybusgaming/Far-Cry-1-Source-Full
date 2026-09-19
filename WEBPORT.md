@@ -1057,12 +1057,13 @@ fn fs_main(in : VSOut) -> @location(0) vec4f {
 - **Stage 0's "previous" is the diffuse colour**, not black or white. That is
   what makes a lone `eCO_MODULATE` against `eCA_Previous` produce "texture times
   vertex colour" rather than "texture times nothing". Asserted.
-- **Three operations are rejected rather than approximated.**
-  `eCO_MULTIPLYADD` needs a third argument the packing has no room for;
-  `eCO_BUMPENVMAP` needs the stage's bump matrix; `eCO_BLEND` needs a blend
-  factor from render state. All three fail the build with a named reason. A
-  shader that fails to build is a visible problem; one that silently computes
-  something else costs days.
+- **Two operations are rejected rather than approximated.** `eCO_BUMPENVMAP`
+  needs the stage's bump matrix; `eCO_BLEND` needs a blend factor from render
+  state. Both fail the build with a named reason. A shader that fails to build
+  is a visible problem; one that silently computes something else costs days.
+
+  `eCO_MULTIPLYADD` used to be a third, on the grounds that it needs an
+  argument the packing had no room for. **That was wrong** — see below.
 - **Alpha test becomes a `discard`.** WebGPU has no alpha-test render state — it
   went with the rest of the fixed-function pipeline.
 - **The BGRA swizzle is here too**, for the same reason as WebGL2: the engine
@@ -1092,6 +1093,38 @@ the emitted code's **structure** and not only its contents:
 Neither is a WGSL parser, and neither pretends to be. They are the smallest
 rules that catch the mistakes actually available to this code, and both were
 confirmed to fail against the old generator before being kept.
+
+### Four operations translated from the name, and wrong
+
+The first version of this translation read each operation's name and emitted
+what the name means in most graphics APIs. Four of them mean something else in
+*this* engine, and all four produced something plausible on screen while doing
+it — which is the failure mode that costs days.
+
+The authority is not the name. It is `XRenderD3D9/D3DRendPipeline.cpp`, which
+maps every operation to a `D3DTOP_*`:
+
+| Operation | Was translated as | Is actually |
+|---|---|---|
+| `eCO_MULTIPLYADD` | refused, "no room for a third argument" | `arg0 + arg1 * arg2` |
+| `eCO_LERP` | interpolate by the first argument's alpha | `mix(arg1, arg0, arg2)` |
+| `eCO_DECAL` | blend over the accumulator by texture alpha | select `arg0`, same as `eCO_REPLACE` |
+| `eCO_DETAIL` | `MODULATE2X` | a plain modulate |
+
+**There is a third argument.** `ShaderParse.cpp` packs it at bits 6-8 of
+`m_eColorArg`, and the Direct3D backend reads it into `D3DTSS_COLORARG0`. The
+refusal of `eCO_MULTIPLYADD` was built on not having looked.
+
+**And the engine truncates it.** `m_eColorArg` is a `byte`, so
+`eCA_Constant << 6` is 256 and does not fit — a shader asking for the constant
+colour as its third argument silently gets `eCA_Specular`. The Direct3D
+backend's own `case eCA_Constant` in that switch is unreachable. This is not
+corrected here: a Far Cry shader was authored against the engine that
+truncates, so reproducing the truncation is what renders what the artist saw.
+
+All four corrections are verified by the conformance run below, not merely
+asserted — `eCO_LERP` in particular used to return its first argument unchanged
+whenever the texture was opaque, which looks exactly like a working select.
 
 ### The cache key
 
