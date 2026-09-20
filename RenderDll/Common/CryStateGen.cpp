@@ -2,12 +2,12 @@
 //
 //  CryEngine web port
 // -------------------------------------------------------------------------
-//  File name:   WGPUStateGen.cpp
+//  File name:   CryStateGen.cpp
 //  Description: GS_* render state -> neutral pipeline state. See the header.
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "WGPUStateGen.h"
+#include "CryStateGen.h"
 
 #include <platform.h>
 #include <IRenderer.h>
@@ -17,52 +17,52 @@
 
 static char g_szWarning[256] = { 0 };
 
-const char* WGPUStateGen_LastWarning() { return g_szWarning; }
+const char* CryStateGen_LastWarning() { return g_szWarning; }
 
 //////////////////////////////////////////////////////////////////////////
 
-static EWGPUBlendFactor DecodeSrc(int nState, bool& bOk)
+static ECryBlendFactor DecodeSrc(int nState, bool& bOk)
 {
 	bOk = true;
 	switch (nState & GS_BLSRC_MASK)
 	{
-	case GS_BLSRC_ZERO:					return eWGPUBlend_Zero;
-	case GS_BLSRC_ONE:					return eWGPUBlend_One;
-	case GS_BLSRC_DSTCOL:				return eWGPUBlend_DstColor;
-	case GS_BLSRC_ONEMINUSDSTCOL:		return eWGPUBlend_OneMinusDstColor;
-	case GS_BLSRC_SRCALPHA:				return eWGPUBlend_SrcAlpha;
-	case GS_BLSRC_ONEMINUSSRCALPHA:		return eWGPUBlend_OneMinusSrcAlpha;
-	case GS_BLSRC_DSTALPHA:				return eWGPUBlend_DstAlpha;
-	case GS_BLSRC_ONEMINUSDSTALPHA:		return eWGPUBlend_OneMinusDstAlpha;
-	case GS_BLSRC_ALPHASATURATE:		return eWGPUBlend_SrcAlphaSaturated;
+	case GS_BLSRC_ZERO:					return eCryBlend_Zero;
+	case GS_BLSRC_ONE:					return eCryBlend_One;
+	case GS_BLSRC_DSTCOL:				return eCryBlend_DstColor;
+	case GS_BLSRC_ONEMINUSDSTCOL:		return eCryBlend_OneMinusDstColor;
+	case GS_BLSRC_SRCALPHA:				return eCryBlend_SrcAlpha;
+	case GS_BLSRC_ONEMINUSSRCALPHA:		return eCryBlend_OneMinusSrcAlpha;
+	case GS_BLSRC_DSTALPHA:				return eCryBlend_DstAlpha;
+	case GS_BLSRC_ONEMINUSDSTALPHA:		return eCryBlend_OneMinusDstAlpha;
+	case GS_BLSRC_ALPHASATURATE:		return eCryBlend_SrcAlphaSaturated;
 	default:
 		bOk = false;
-		return eWGPUBlend_One;
+		return eCryBlend_One;
 	}
 }
 
-static EWGPUBlendFactor DecodeDst(int nState, bool& bOk)
+static ECryBlendFactor DecodeDst(int nState, bool& bOk)
 {
 	bOk = true;
 	switch (nState & GS_BLDST_MASK)
 	{
-	case GS_BLDST_ZERO:					return eWGPUBlend_Zero;
-	case GS_BLDST_ONE:					return eWGPUBlend_One;
-	case GS_BLDST_SRCCOL:				return eWGPUBlend_SrcColor;
-	case GS_BLDST_ONEMINUSSRCCOL:		return eWGPUBlend_OneMinusSrcColor;
-	case GS_BLDST_SRCALPHA:				return eWGPUBlend_SrcAlpha;
-	case GS_BLDST_ONEMINUSSRCALPHA:		return eWGPUBlend_OneMinusSrcAlpha;
-	case GS_BLDST_DSTALPHA:				return eWGPUBlend_DstAlpha;
-	case GS_BLDST_ONEMINUSDSTALPHA:		return eWGPUBlend_OneMinusDstAlpha;
+	case GS_BLDST_ZERO:					return eCryBlend_Zero;
+	case GS_BLDST_ONE:					return eCryBlend_One;
+	case GS_BLDST_SRCCOL:				return eCryBlend_SrcColor;
+	case GS_BLDST_ONEMINUSSRCCOL:		return eCryBlend_OneMinusSrcColor;
+	case GS_BLDST_SRCALPHA:				return eCryBlend_SrcAlpha;
+	case GS_BLDST_ONEMINUSSRCALPHA:		return eCryBlend_OneMinusSrcAlpha;
+	case GS_BLDST_DSTALPHA:				return eCryBlend_DstAlpha;
+	case GS_BLDST_ONEMINUSDSTALPHA:		return eCryBlend_OneMinusDstAlpha;
 	default:
 		bOk = false;
-		return eWGPUBlend_Zero;
+		return eCryBlend_Zero;
 	}
 }
 
 //////////////////////////////////////////////////////////////////////////
 
-void WGPUStateGen_Decode(int nRenderState, SWGPUStateDesc& out)
+void CryStateGen_Decode(int nRenderState, SCryStateDesc& out)
 {
 	g_szWarning[0] = 0;
 
@@ -94,8 +94,8 @@ void WGPUStateGen_Decode(int nRenderState, SWGPUStateDesc& out)
 	else
 	{
 		out.bBlendEnabled = false;
-		out.eSrcFactor = eWGPUBlend_One;
-		out.eDstFactor = eWGPUBlend_Zero;
+		out.eSrcFactor = eCryBlend_One;
+		out.eDstFactor = eCryBlend_Zero;
 	}
 
 	//////////////////////////////////////////////////////////////////////
@@ -110,16 +110,16 @@ void WGPUStateGen_Decode(int nRenderState, SWGPUStateDesc& out)
 	out.bDepthWrite = (nRenderState & GS_DEPTHWRITE) != 0;
 
 	if (nRenderState & GS_DEPTHFUNC_EQUAL)
-		out.eDepthCompare = eWGPUCompare_Equal;
+		out.eDepthCompare = eCryCompare_Equal;
 	else if (nRenderState & GS_DEPTHFUNC_GREAT)
-		out.eDepthCompare = eWGPUCompare_Greater;
+		out.eDepthCompare = eCryCompare_Greater;
 	else
-		out.eDepthCompare = eWGPUCompare_LessEqual;
+		out.eDepthCompare = eCryCompare_LessEqual;
 
 	// WebGPU has no way to disable the depth test as such; the equivalent is a
 	// compare function that always passes.
 	if (!out.bDepthTest)
-		out.eDepthCompare = eWGPUCompare_Always;
+		out.eDepthCompare = eCryCompare_Always;
 
 	//////////////////////////////////////////////////////////////////////
 	// Colour write mask. R=1 G=2 B=4 A=8.
@@ -145,27 +145,27 @@ void WGPUStateGen_Decode(int nRenderState, SWGPUStateDesc& out)
 	switch (nRenderState & GS_ALPHATEST_MASK)
 	{
 	case GS_ALPHATEST_GREATER0:
-		out.eAlphaTest = eWGPUAlphaTest_Greater;
+		out.eAlphaTest = eCryAlphaTest_Greater;
 		out.fAlphaRef  = 0.0f;
 		break;
 
 	case GS_ALPHATEST_LESS128:
-		out.eAlphaTest = eWGPUAlphaTest_Less;
+		out.eAlphaTest = eCryAlphaTest_Less;
 		out.fAlphaRef  = 128.0f / 255.0f;
 		break;
 
 	case GS_ALPHATEST_GEQUAL128:
-		out.eAlphaTest = eWGPUAlphaTest_GreaterEqual;
+		out.eAlphaTest = eCryAlphaTest_GreaterEqual;
 		out.fAlphaRef  = 128.0f / 255.0f;
 		break;
 
 	case GS_ALPHATEST_GEQUAL64:
-		out.eAlphaTest = eWGPUAlphaTest_GreaterEqual;
+		out.eAlphaTest = eCryAlphaTest_GreaterEqual;
 		out.fAlphaRef  = 64.0f / 255.0f;
 		break;
 
 	default:
-		out.eAlphaTest = eWGPUAlphaTest_None;
+		out.eAlphaTest = eCryAlphaTest_None;
 		out.fAlphaRef  = 0.0f;
 		break;
 	}
@@ -175,7 +175,7 @@ void WGPUStateGen_Decode(int nRenderState, SWGPUStateDesc& out)
 
 //////////////////////////////////////////////////////////////////////////
 
-unsigned long long WGPUStateGen_Key(const SWGPUStateDesc& desc)
+unsigned long long CryStateGen_Key(const SCryStateDesc& desc)
 {
 	unsigned long long h = 1469598103934665603ULL;
 

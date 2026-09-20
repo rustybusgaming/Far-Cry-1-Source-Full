@@ -15,7 +15,10 @@
 
 #include "RenderPCH.h"
 #include "GLESRenderer.h"
+#include "GLESState.h"
 #include "GLESContext.h"
+#include "GLESTexture.h"
+#include "GLESShader.h"
 
 #include <time.h>
 
@@ -38,12 +41,137 @@ CGLESRenderer::CGLESRenderer()
 	, m_pDynPool(0)
 	, m_nDynPoolVerts(0)
 	, m_nDynPoolUsed(0)
+	// The fixed-function default, and what every caller that never touches
+	// SetColorOp is entitled to: texture times vertex colour.
+	, m_eColorOp(eCO_MODULATE)
+	, m_eAlphaOp(eCO_MODULATE)
+	, m_eColorArg(DEF_TEXARG0)
+	, m_eAlphaArg(DEF_TEXARG0)
 {
 	m_fClearColor[0] = m_fClearColor[1] = m_fClearColor[2] = 0.0f;
 	m_fClearColor[3] = 1.0f;
 
+	// White, so a pass naming eCA_Constant before anything has set a material
+	// colour multiplies by one rather than by whatever was in memory.
+	m_fMaterialColor[0] = m_fMaterialColor[1] = 1.0f;
+	m_fMaterialColor[2] = m_fMaterialColor[3] = 1.0f;
+
 	memset(m_matMVP, 0, sizeof(m_matMVP));
 	m_matMVP[0] = m_matMVP[5] = m_matMVP[10] = m_matMVP[15] = 1.0f;
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! The engine describing a texture stage.
+//!
+//! CNULLRenderer's implementation is "{}" -- an empty inline -- so until now
+//! every one of these was dropped. Cry3DEngine's decals, rain and butterflies,
+//! CRESky, and the script renderer all call it, and several ask for
+//! eCA_Constant, whose colour then had nowhere to go.
+//!
+//! Nothing is compiled here. The description is recorded and the program is
+//! fetched at draw time, because two of the fields the generator needs --
+//! whether a texture is bound, and the alpha test from the render state -- are
+//! not known until then.
+//////////////////////////////////////////////////////////////////////////
+void CGLESRenderer::SetColorOp(byte eCo, byte eAo, byte eCa, byte eAa)
+{
+	m_eColorOp  = eCo;
+	m_eAlphaOp  = eAo;
+	m_eColorArg = eCa;
+	m_eAlphaArg = eAa;
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! The constant colour. Direct3D calls it the texture factor.
+//////////////////////////////////////////////////////////////////////////
+void CGLESRenderer::SetMaterialColor(float r, float g, float b, float a)
+{
+	m_fMaterialColor[0] = r;
+	m_fMaterialColor[1] = g;
+	m_fMaterialColor[2] = b;
+	m_fMaterialColor[3] = a;
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! Culling, which was also a no-op inherited from the null renderer.
+//!
+//! R_CULL_DISABLE and R_CULL_NONE are the same value (0), so there are three
+//! modes and not four.
+//!
+//! The winding is GL_CCW, set once in PS2SetDefaultState. The engine's front
+//! face matches GL's here, so R_CULL_FRONT is GL_FRONT and not the reverse --
+//! getting that backwards turns every closed surface inside out, which looks
+//! like a broken mesh rather than a broken state.
+//////////////////////////////////////////////////////////////////////////
+void CGLESRenderer::SetCullMode(int mode)
+{
+#if defined(__EMSCRIPTEN__)
+	if (!m_bContextCreated)
+		return;
+
+	switch (mode)
+	{
+	case R_CULL_FRONT:
+		glEnable(GL_CULL_FACE);
+		glCullFace(GL_FRONT);
+		break;
+
+	case R_CULL_BACK:
+		glEnable(GL_CULL_FACE);
+		glCullFace(GL_BACK);
+		break;
+
+	case R_CULL_DISABLE:	// == R_CULL_NONE
+	default:
+		glDisable(GL_CULL_FACE);
+		break;
+	}
+#endif
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! Push the constant colour into a program that declares it.
+//!
+//! Programs whose stages never name eCA_Constant do not declare the uniform at
+//! all, and the generator is what decides that -- so the location is -1 there
+//! and this does nothing, rather than the caller having to know which passes
+//! care.
+//////////////////////////////////////////////////////////////////////////
+void CGLESRenderer::ApplyMaterialColor(const SGLESProgram* pProgram) const
+{
+#if defined(__EMSCRIPTEN__)
+	if (!pProgram || pProgram->nConstColor < 0)
+		return;
+
+	glUniform4f(pProgram->nConstColor,
+	            m_fMaterialColor[0], m_fMaterialColor[1],
+	            m_fMaterialColor[2], m_fMaterialColor[3]);
+#endif
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! The current stage, as a pass the generator can translate.
+//////////////////////////////////////////////////////////////////////////
+SCryPassDesc CGLESRenderer::CurrentPass() const
+{
+	SCryPassDesc desc;
+	desc.nStages = 1;
+
+	CryPass_FromTexUnit(m_eColorOp, m_eColorArg,
+	                    m_eAlphaOp, m_eAlphaArg,
+#if defined(__EMSCRIPTEN__)
+	                    GLESTexture_IsBound(),
+#else
+	                    false,
+#endif
+	                    desc.stages[0]);
+
+	// The alpha test has no GLES 3.0 state, so it is compiled into the shader.
+	// This is the join that makes m_CurState's alpha-test bits mean something:
+	// until now nothing ever set these fields from engine data.
+	CryPass_SetAlphaTestFromRenderState((unsigned int)m_CurState, desc);
+
+	return desc;
 }
 
 CGLESRenderer::~CGLESRenderer()
@@ -228,6 +356,10 @@ void CGLESRenderer::PS2SetDefaultState()
 #if defined(__EMSCRIPTEN__)
 	if (!m_bContextCreated)
 		return;
+
+	// This sets the whole pipeline by hand, so nothing the state cache believes
+	// survives it.
+	GLESState_Invalidate();
 
 	glDisable(GL_BLEND);
 	glDisable(GL_STENCIL_TEST);

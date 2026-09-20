@@ -251,10 +251,16 @@ if(EMSCRIPTEN)
     XRenderNULL/NULL_TexturesStreaming.cpp
     XRenderNULL/NULL_VertBuffer.cpp
         XRenderNULL/NULL_System.cpp
+        Common/CryStateGen.cpp
+        Common/CryPassDesc.cpp
+        Common/CryPassGen.cpp
         XRenderGLES/GLESContext.cpp
         XRenderGLES/GLESSystem.cpp
         XRenderGLES/GLESFrame.cpp
         XRenderGLES/GLESShader.cpp
+        XRenderGLES/GLESShaderGen.cpp
+        XRenderGLES/GLESConform.cpp
+        XRenderGLES/GLESState.cpp
         XRenderGLES/GLESDraw.cpp
         XRenderGLES/GLESTexture.cpp
         XRenderGLES/GLESVertexBuffer.cpp
@@ -359,8 +365,10 @@ if(EMSCRIPTEN)
         XRenderWGPU/WGPUContext.cpp
         XRenderWGPU/WGPUSystem.cpp
         XRenderWGPU/WGPUFrame.cpp
+        Common/CryStateGen.cpp
+        Common/CryPassDesc.cpp
+        Common/CryPassGen.cpp
         XRenderWGPU/WGPUShaderGen.cpp
-        XRenderWGPU/WGPUStateGen.cpp
         XRenderWGPU/WGPUPipeline.cpp
         INCLUDES ${CRY_RENDER_INCLUDES}
                  "${CMAKE_CURRENT_SOURCE_DIR}/XRenderWGPU"

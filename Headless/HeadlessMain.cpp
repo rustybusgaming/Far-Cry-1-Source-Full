@@ -34,6 +34,7 @@
 
 // The host-side ILog, shared with the browser host. See Hosts/CryHostLog.h.
 #include "CryHostLog.h"
+#include "CryAssetRoot.h"
 
 //////////////////////////////////////////////////////////////////////////
 //! The engine requires pCheckFunc to be non-null -- it is the copy-protection
@@ -69,6 +70,23 @@ int main(int argc, char** argv)
 		        sizeof(params.szSystemCmdLine) - strlen(params.szSystemCmdLine) - 2);
 		strncat(params.szSystemCmdLine, " ", 1);
 	}
+
+	//////////////////////////////////////////////////////////////////////
+	// Game data, if any was given.
+	//
+	// "--data <dir>" makes that directory the working directory before the
+	// engine starts, which is all the engine needs: CryPak reads everything
+	// through paths relative to it. The switch is left on the command line
+	// afterwards -- the engine parses the same string and ignores what it
+	// does not recognise.
+	//////////////////////////////////////////////////////////////////////
+	const char* szData = CryAssetRoot_ArgValue(argc, argv, "--data");
+	if (!CryAssetRoot_Set(szData))
+		return 1;
+
+	SCryAssetReport assets;
+	CryAssetRoot_Inspect(assets);
+	CryAssetRoot_LogReport(assets);
 
 	printf("Calling CreateSystemInterface...\n");
 	ISystem* pSystem = CreateSystemInterface(params);

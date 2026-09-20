@@ -111,7 +111,13 @@ bool CGameMods::SetCurrentMod(const char *sModName,bool bNeedsRestart)
 {
 	ASSERT(sModName);
 #if defined(LINUX)
-	RemoveCRLF(sModName);
+	// [webport] The original stripped sModName in place, which cannot compile:
+	// the parameter is const char*. Strip a copy and use that from here on.
+	char szModName[256];
+	strncpy(szModName, sModName, sizeof(szModName) - 1);
+	szModName[sizeof(szModName) - 1] = 0;
+	RemoveCRLF(szModName);
+	sModName = szModName;
 #endif
 	if (stricmp(m_sCurrentMod.c_str(),sModName)==0)
 	{

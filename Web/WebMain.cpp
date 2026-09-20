@@ -45,6 +45,12 @@
 #include <stdlib.h>
 
 #include "CryHostLog.h"
+#include "CryAssetRoot.h"
+#include "WebAssets.h"
+
+#include <IGame.h>
+
+#include "GLESConform.h"
 
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
@@ -61,6 +67,11 @@ struct SWebHost
 	CVertexBuffer*	pProofBuffer;
 	SVertexStream	proofIndices;
 	bool			bQuit;
+
+	//! The game module. Null when CryGame could not be created or initialised,
+	//! in which case the host still runs the engine and draws its own
+	//! geometry -- which is what every build before this one did.
+	IGame*			pGame;
 };
 
 static SWebHost	g_host;
@@ -228,6 +239,54 @@ static void DrawProofOfLife(IRenderer* pRenderer)
 		                      R_PRIMV_TRIANGLES);
 	}
 
+	//////////////////////////////////////////////////////////////////////
+	// Bottom right: the SetColorOp path.
+	//
+	// This is how everything outside the shader system asks for a texture
+	// stage -- Cry3DEngine's decals, rain and butterflies, CRESky, the script
+	// renderer. They all call SetColorOp with eCA_Constant and then set the
+	// colour with SetMaterialColor, and until recently this backend inherited
+	// the null renderer's empty implementations of both, so every one of those
+	// requests was dropped and the quad came out as plain vertex colour.
+	//
+	// Drawn with WHITE vertices on purpose. A backend that ignores SetColorOp
+	// falls back to "texture times vertex colour", which with white vertices
+	// and no texture is white -- nothing like the expected colour below. The
+	// old behaviour cannot be mistaken for the new one.
+	//////////////////////////////////////////////////////////////////////
+	const float yCTop = nHeight * 0.55f, yCBot = nHeight * 0.85f;
+
+	memset(v, 0, sizeof(v));
+	v[0].xyz = Vec3(nWidth * 0.72f, yCTop, 0.0f);
+	v[1].xyz = Vec3(nWidth * 0.92f, yCTop, 0.0f);
+	v[2].xyz = Vec3(nWidth * 0.92f, yCBot, 0.0f);
+	v[3].xyz = Vec3(nWidth * 0.72f, yCBot, 0.0f);
+
+	for (int i = 0; i < 4; ++i)
+	{
+		v[i].color.bcolor[0] = 0xFF;
+		v[i].color.bcolor[1] = 0xFF;
+		v[i].color.bcolor[2] = 0xFF;
+		v[i].color.bcolor[3] = 0xFF;
+	}
+
+	// Texture times constant, with no texture bound -- so the texel reads as
+	// white and the result is the constant colour alone. 224/255, 96/255,
+	// 32/255 comes back as 224,96,32.
+	pRenderer->SetTexture(0);
+	pRenderer->SetColorOp(eCO_MODULATE, eCO_MODULATE,
+	                      eCA_Texture | (eCA_Constant << 3),
+	                      eCA_Texture | (eCA_Constant << 3));
+	pRenderer->SetMaterialColor(224.0f / 255.0f, 96.0f / 255.0f,
+	                            32.0f / 255.0f, 1.0f);
+
+	pRenderer->DrawDynVB(v, inds, 4, 4, R_PRIMV_QUADS);
+
+	// Put the stage back to the fixed-function default. Leaving it set would
+	// make every later draw in the frame inherit it, which is exactly the kind
+	// of state leak this path makes possible now that it does something.
+	pRenderer->SetColorOp(eCO_MODULATE, eCO_MODULATE, DEF_TEXARG0, DEF_TEXARG0);
+
 	pRenderer->Set2DMode(false, nWidth, nHeight);
 }
 
@@ -266,12 +325,15 @@ static void PublishPixelSample(IRenderer* pRenderer)
 	const int nCentre = SAMPLE(0.30f, 0.30f);	// untextured, dynamic
 	const int nTex    = SAMPLE(0.70f, 0.30f);	// textured, dynamic
 	const int nStatic = SAMPLE(0.50f, 0.70f);	// static buffer
+	const int nConst  = SAMPLE(0.82f, 0.70f);	// SetColorOp + SetMaterialColor
 	const int nCorner = 0;
 
-	printf("[web] untextured %d,%d,%d  textured %d,%d,%d  static %d,%d,%d  corner %d,%d,%d\n",
+	printf("[web] untextured %d,%d,%d  textured %d,%d,%d  static %d,%d,%d  "
+	       "constant %d,%d,%d  corner %d,%d,%d\n",
 	       pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
 	       pPixels[nTex + 0], pPixels[nTex + 1], pPixels[nTex + 2],
 	       pPixels[nStatic + 0], pPixels[nStatic + 1], pPixels[nStatic + 2],
+	       pPixels[nConst + 0], pPixels[nConst + 1], pPixels[nConst + 2],
 	       pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2]);
 
 	// No commas inside the braced block: EM_ASM is a macro, and the
@@ -290,13 +352,95 @@ static void PublishPixelSample(IRenderer* pRenderer)
 		window.__cryStaticR = $9;
 		window.__cryStaticG = $10;
 		window.__cryStaticB = $11;
+		window.__cryConstR = $12;
+		window.__cryConstG = $13;
+		window.__cryConstB = $14;
 	},
 	pPixels[nCentre + 0], pPixels[nCentre + 1], pPixels[nCentre + 2],
 	pPixels[nCorner + 0], pPixels[nCorner + 1], pPixels[nCorner + 2],
 	pPixels[nTex + 0], pPixels[nTex + 1], pPixels[nTex + 2],
-	pPixels[nStatic + 0], pPixels[nStatic + 1], pPixels[nStatic + 2]);
+	pPixels[nStatic + 0], pPixels[nStatic + 1], pPixels[nStatic + 2],
+	pPixels[nConst + 0], pPixels[nConst + 1], pPixels[nConst + 2]);
 
 	free(pPixels);
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! Construct the game and hand it to the engine.
+//!
+//! Failure here is NOT fatal. Without game assets the game cannot get far,
+//! and the host is still useful without it -- it draws its own geometry and
+//! runs the shader conformance. So this reports what happened and lets the
+//! frame loop carry on either way, rather than turning a missing .pak into a
+//! blank page.
+//////////////////////////////////////////////////////////////////////////
+static void CreateGame()
+{
+	// Defined by CryGame/Game.cpp. Declared here rather than reached through
+	// the static module registry, because ISystem::CreateGame takes an
+	// already-constructed IGame* and never asks a module for a factory.
+	extern IGame* CreateGameInstance();
+
+	IGame* pGame = CreateGameInstance();
+	if (!pGame)
+	{
+		fprintf(stderr, "[web] CreateGameInstance returned null\n");
+		return;
+	}
+
+	SGameInitParams params;
+	params.pGame            = pGame;
+	params.sGameDLL         = 0;	// never reached: pGame is checked first
+	params.bDedicatedServer = false;
+	params.szGameCmdLine[0] = 0;
+
+	if (!g_host.pSystem->CreateGame(params))
+	{
+		fprintf(stderr, "[web] ISystem::CreateGame failed\n");
+		pGame->Release();
+		return;
+	}
+
+	// CreateGame only registers it. Init is what builds the game's own
+	// subsystems, and it is the call that needs the data.
+	if (!pGame->Init(g_host.pSystem, /*bDedicatedSrv*/ false,
+	                 /*bInEditor*/ false, /*szGameMod*/ ""))
+	{
+		fprintf(stderr, "[web] IGame::Init failed -- continuing without the "
+		                "game. This is expected with no game assets present; "
+		                "see WEBPORT.md.\n");
+		return;
+	}
+
+	g_host.pGame = pGame;
+	printf("[web] game created and initialised\n");
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! Compile the generated shaders with the real driver and check what they
+//! compute. See RenderDll/XRenderGLES/GLESConform.cpp.
+//!
+//! The result goes on window so the browser test can assert on it. A count
+//! rather than a bare pass/fail, because "3 of 6" and "0 of 6" are different
+//! problems and the difference should not need the log to find.
+//////////////////////////////////////////////////////////////////////////
+static void RunShaderConformance()
+{
+	int nPassed = 0, nTotal = 0;
+	const bool bOk = GLESConform_Run(nPassed, nTotal);
+
+	printf("[web] shader conformance: %d/%d passed\n", nPassed, nTotal);
+
+	// No commas inside the braced block: EM_ASM is a macro, and a comma at
+	// brace depth 0 would split it into arguments.
+	EM_ASM({
+		window.__cryConformPassed = $0;
+		window.__cryConformTotal  = $1;
+	}, nPassed, nTotal);
+
+	if (!bOk)
+		fprintf(stderr, "[web] shader conformance FAILED; the per-case detail "
+		                "is in the engine log above\n");
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -333,8 +477,6 @@ static void WebFrame(void*)
 
 	pRenderer->BeginFrame();
 
-	DrawProofOfLife(pRenderer);
-
 	// ISystem::Update drives the timer, console, streaming, input and the
 	// script system. It returns false when something has asked to quit.
 	if (!g_host.pSystem->Update(0, 0))
@@ -345,9 +487,47 @@ static void WebFrame(void*)
 		return;
 	}
 
+	// The game's own frame.
+	//
+	// CXGame::Run is "while(1) { if (!Update()) break; }" -- a blocking loop,
+	// and a browser cannot have one. Calling Update directly IS the inversion:
+	// Run adds nothing else on this path except the relaunch flag, which no
+	// browser build can act on anyway.
+	if (g_host.pGame && !g_host.pGame->Update())
+	{
+		printf("[web] the game asked to quit after %u frames\n", g_host.nFrame);
+		g_host.pGame = 0;
+	}
+
+	// AFTER the game, deliberately.
+	//
+	// These quads are the host's diagnostics: they are what the browser tests
+	// read back, and between them they exercise dynamic geometry, textures, a
+	// static vertex buffer, the render state and the SetColorOp path.
+	//
+	// They used to be drawn before ISystem::Update, which was fine while
+	// nothing else drew. The moment CryGame started running its own frame it
+	// cleared them, and all five readbacks came back black -- the game owns
+	// the frame, correctly, and the host was drawing underneath it.
+	//
+	// Drawing them last makes them an overlay on whatever the game produced,
+	// so the diagnostics keep working without taking the frame away from the
+	// thing that should own it.
+	DrawProofOfLife(pRenderer);
+
 	pRenderer->Update();
 
 	++g_host.nFrame;
+
+	// The shader conformance run, once, at the same point and for the same
+	// reason: the programs and buffers exist by now. It draws into its own
+	// off-screen target, so it does not disturb this frame.
+	//
+	// It lives here rather than in a test binary because it needs a real GL
+	// context, and the only place there is one is inside a browser running
+	// this host.
+	if (g_host.nFrame == 5)
+		RunShaderConformance();
 
 	// Once, a few frames in, sample what actually reached the framebuffer and
 	// publish it. Through IRenderer::ReadFrameBuffer rather than a direct GL
@@ -366,6 +546,34 @@ static void WebFrame(void*)
 
 //////////////////////////////////////////////////////////////////////////
 
+//////////////////////////////////////////////////////////////////////////
+//! Start the engine. Called once the asset choice has been made.
+//!
+//! Split out of main() because picking a folder is asynchronous and
+//! CreateSystemInterface is not: there is no point inside engine startup where
+//! a file dialog can be awaited, so the choice has to complete BEFORE the
+//! engine exists. Same inversion as the WebGPU device acquisition, same
+//! reason.
+//////////////////////////////////////////////////////////////////////////
+static void StartEngine(int argc, char** argv);
+
+//! Polled from the browser until the user has chosen. One-shot: it cancels
+//! itself before starting anything, so a slow startup cannot re-enter it.
+static void WaitForAssets(void* pArg)
+{
+	if (WebAssets_State() == eWebAssets_Waiting)
+		return;
+
+	emscripten_cancel_main_loop();
+
+	char** argv = (char**)pArg;
+	int argc = 0;
+	while (argv && argv[argc])
+		++argc;
+
+	StartEngine(argc, argv);
+}
+
 int main(int argc, char** argv)
 {
 	printf("CryEngine 1.33 web port -- browser host\n");
@@ -373,6 +581,23 @@ int main(int argc, char** argv)
 
 	memset(&g_host, 0, sizeof(g_host));
 	g_host.pLog = &g_log;
+
+	//////////////////////////////////////////////////////////////////////
+	// Ask for game data first.
+	//
+	// Nothing is uploaded: the files are read in this tab and written into
+	// the page's own filesystem. See WebAssets.h.
+	//////////////////////////////////////////////////////////////////////
+	WebAssets_Begin();
+
+	// argv is valid for the life of the program, so it is safe to hand to the
+	// poll and use after main returns.
+	emscripten_set_main_loop_arg(WaitForAssets, argv, 0, 0);
+	return 0;
+}
+
+static void StartEngine(int argc, char** argv)
+{
 
 	SSystemInitParams params;
 	memset(&params, 0, sizeof(params));
@@ -397,6 +622,23 @@ int main(int argc, char** argv)
 		strncat(params.szSystemCmdLine, " ", 1);
 	}
 
+	//////////////////////////////////////////////////////////////////////
+	// Game data.
+	//
+	// In a browser there is no installation to point at, so whatever the user
+	// supplied has already been written into the Emscripten filesystem by the
+	// time this runs -- see WebAssets.cpp. All that is left is the same step
+	// the native host takes: make it the working directory, and report what
+	// the engine is going to find.
+	//////////////////////////////////////////////////////////////////////
+	if (!CryAssetRoot_Set(WebAssets_Root()))
+		fprintf(stderr, "[web] could not enter the asset root; continuing "
+		                "without game data\n");
+
+	SCryAssetReport assets;
+	CryAssetRoot_Inspect(assets);
+	CryAssetRoot_LogReport(assets);
+
 	printf("Calling CreateSystemInterface...\n");
 	g_host.pSystem = CreateSystemInterface(params);
 
@@ -404,10 +646,26 @@ int main(int argc, char** argv)
 	{
 		printf("FAILED: CreateSystemInterface returned NULL\n");
 		EM_ASM({ window.__cryFailed = true; window.__cryTestDone = true; });
-		return 1;
+		return;
 	}
 
 	g_host.pRenderer = g_host.pSystem->GetIRenderer();
+	//////////////////////////////////////////////////////////////////////
+	// The game.
+	//
+	// Every build before this one stopped at CreateSystemInterface: the
+	// engine came up, the renderer came up, and nothing owned a player, a
+	// level or a camera -- because CryGame was not in the build at all.
+	//
+	// ISystem::CreateGame normally loads CryGame.dll. It cannot here, and it
+	// does not need to: SGameInitParams::pGame is an injection point that
+	// CSystem checks BEFORE it looks at sGameDLL, so handing it an instance
+	// we constructed ourselves skips the loader entirely. That is the same
+	// shape as the static module registry, and it is already in Crytek's code.
+	//////////////////////////////////////////////////////////////////////
+	printf("Creating the game...\n");
+	CreateGame();
+
 	printf("\nSystem interface created. Renderer: %s\n",
 	       g_host.pRenderer ? "present" : "MISSING");
 
@@ -430,5 +688,4 @@ int main(int argc, char** argv)
 	// loop with it -- this build links with EXIT_RUNTIME=1 for the headless
 	// host's sake.
 	emscripten_exit_with_live_runtime();
-	return 0;
 }

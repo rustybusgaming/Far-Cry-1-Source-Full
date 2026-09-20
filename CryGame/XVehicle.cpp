@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "XVehicle.h"
 #include <IAgent.h>
 
@@ -160,9 +160,16 @@ void CVehicle::Update()
 	UpdateLights();
 	UpdateWeaponPosAngl();
 
+	// [webport] Address of a temporary; see the same pattern in Flock.cpp.
+	// Braced deliberately: the original was two unbraced nested ifs, and a
+	// declaration cannot go between an if and its statement without changing
+	// what the outer if guards.
 	if(GetEntity()->GetPhysics())
-	if(!GetEntity()->GetPhysics()->GetStatus(&pe_status_awake()))
-		UpdateCamera(fTimeStep, m_pGame->IsSynchronizing());
+	{
+		pe_status_awake statusAwake;
+		if(!GetEntity()->GetPhysics()->GetStatus(&statusAwake))
+			UpdateCamera(fTimeStep, m_pGame->IsSynchronizing());
+	}
 
 	if ((m_Type == VHT_BOAT) )
 		WakeupPhys();
@@ -1491,7 +1498,11 @@ UsersList::iterator	itr = std::find(m_UsersList.begin(), m_UsersList.end(), entI
 
 void CVehicle::PreloadInstanceResources(Vec3d vPrevPortalPos, float fPrevPortalDistance, float fTime)
 {
-#pragma message( "Warning: Preloading of render resources is not implemented in " __FUNCTION__ )
+// [webport] MSVC allows __FUNCTION__ inside #pragma message; the preprocessor
+// cannot expand it in a standard build, and clang rejects the unparenthesised
+// result. The warning is preserved as a comment rather than dropped, because
+// it names real unimplemented work:
+//   Warning: Preloading of render resources is not implemented here.
 	// for all objects what will be used for rendering call 
 	// ICryCharInstance::PreloadResources or
 	// IStatObj::PreloadResources

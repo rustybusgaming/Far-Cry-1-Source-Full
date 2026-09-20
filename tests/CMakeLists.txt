@@ -32,23 +32,52 @@ add_test(NAME webinput COMMAND test_webinput)
 # in that backend touches the GPU and cannot be checked without one.
 add_executable(test_shadergen test_shadergen.cpp
                "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
-               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUStateGen.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassGen.cpp")
 cry_apply_common_settings(test_shadergen)
 target_include_directories(test_shadergen PRIVATE
-    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU"
+    "${PROJECT_SOURCE_DIR}/RenderDll/Common")
 target_link_libraries(test_shadergen PRIVATE CryCommon)
 
 add_test(NAME shadergen COMMAND test_shadergen)
+
+# The same translation emitted as GLSL ES 3.00.
+#
+# This one carries more weight than its size suggests. The WebGL2 backend can
+# be RUN here -- in a real browser, reading real pixels -- while the WebGPU one
+# cannot, and since both emitters share their operation table, exercising this
+# path is evidence about the decisions the WGSL path also depends on.
+#
+# It links the WGSL generator too, so one test can assert that the two
+# languages agree on a description rather than each asserting its own half.
+add_executable(test_glesshadergen test_glesshadergen.cpp
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderGLES/GLESShaderGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassGen.cpp")
+cry_apply_common_settings(test_glesshadergen)
+target_include_directories(test_glesshadergen PRIVATE
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderGLES"
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU"
+    "${PROJECT_SOURCE_DIR}/RenderDll/Common")
+target_link_libraries(test_glesshadergen PRIVATE CryCommon)
+
+add_test(NAME glesshadergen COMMAND test_glesshadergen)
 
 # GS_* render state to pipeline state. Also pure, also testable without a GPU,
 # and worth testing carefully: it is one integer carrying eleven things, several
 # of them negative flags, and one read backwards gives a scene that renders but
 # is subtly wrong.
 add_executable(test_stategen test_stategen.cpp
-               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUStateGen.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassGen.cpp")
 cry_apply_common_settings(test_stategen)
 target_include_directories(test_stategen PRIVATE
-    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
+    "${PROJECT_SOURCE_DIR}/RenderDll/Common")
 target_link_libraries(test_stategen PRIVATE CryCommon)
 
 add_test(NAME stategen COMMAND test_stategen)
@@ -60,10 +89,13 @@ add_test(NAME stategen COMMAND test_stategen)
 add_executable(test_pipelinekey test_pipelinekey.cpp
                "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUPipeline.cpp"
                "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUShaderGen.cpp"
-               "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU/WGPUStateGen.cpp")
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryStateGen.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassDesc.cpp"
+               "${PROJECT_SOURCE_DIR}/RenderDll/Common/CryPassGen.cpp")
 cry_apply_common_settings(test_pipelinekey)
 target_include_directories(test_pipelinekey PRIVATE
-    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU")
+    "${PROJECT_SOURCE_DIR}/RenderDll/XRenderWGPU"
+    "${PROJECT_SOURCE_DIR}/RenderDll/Common")
 target_link_libraries(test_pipelinekey PRIVATE CryCommon)
 
 # Under Emscripten, WGPUPipeline.h reveals its device half and pulls in Dawn's
@@ -101,6 +133,29 @@ set_tests_properties(headless_boot PROPERTIES
     PASS_REGULAR_EXPRESSION "System interface created"
     FAIL_REGULAR_EXPRESSION "FAILED: CreateSystemInterface"
 )
+
+# Does "--data <dir>" actually reach the engine's file layer?
+#
+# The host can set a working directory and print a confident report while
+# CryPak never consults it -- the log looks identical either way. This asserts
+# on the ENGINE's output instead, and pairs it with the negative case, so a
+# root that was reachable by accident cannot pass as a working feature.
+#
+# The tree it runs against is synthetic and contains no game content; it cannot
+# contain any, since Far Cry's assets are not redistributable.
+#
+# Native only. Under Emscripten the Headless target is a .js that node has to
+# run, and the switch being tested is a working-directory change -- which is
+# the one thing MEMFS makes meaningless, since there is no directory to point
+# at until the browser half has written one. The browser side of this is
+# WebAssets.cpp and is covered by the page tests below.
+if(NOT EMSCRIPTEN)
+    add_test(NAME asset_root
+             COMMAND ${Python3_EXECUTABLE}
+                     "${CMAKE_CURRENT_SOURCE_DIR}/run_asset_root_test.py"
+                     "$<TARGET_FILE:Headless>")
+    set_tests_properties(asset_root PROPERTIES TIMEOUT 300)
+endif()
 
 # ------------------------------------------------------------------------------
 # Browser tests.
@@ -158,7 +213,18 @@ if(EMSCRIPTEN)
                          # CreateIndexBuffer, DrawBuffer -- the route world
                          # geometry takes, with attributes bound from the
                          # engine's own vertex-format tables.
-                         --expect-static 96,176,48)
+                         --expect-static 96,176,48
+                         # The SetColorOp path: texture times constant, with
+                         # no texture bound, so the constant colour alone.
+                         # Drawn with WHITE vertices, so a backend that
+                         # ignored SetColorOp would give white instead.
+                         --expect-constant 224,96,32
+                         # Generated GLSL, compiled by the real driver, drawn
+                         # and read back. See RenderDll/XRenderGLES/
+                         # GLESConform.cpp -- it covers the multi-stage case
+                         # that the WGSL generator got wrong and that no
+                         # assertion about emitted text could have caught.
+                         --expect-shader-conformance)
         set_tests_properties(web_host_frames PROPERTIES TIMEOUT 300)
     endif()
 endif()

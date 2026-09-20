@@ -40,7 +40,7 @@ static char THIS_FILE[] = __FILE__;
 
 /*
 #include "../Cry3DEngine/StatObj.h"
-#include "file.h"
+#include "File.h"
 */
 
 //////////////////////////////////////////////////////////////////////////

@@ -188,7 +188,10 @@ public: // ---------------------------------------------------------------------
 	Vec3 GetCamPos() { return m_vCamPos; }
 	void SetCameraParams(Vec3 vCamStiffness[2],Vec3 vCamLimits[2],float fCamDamping,float fMaxCamTimestep,float fCamSnapDist,float fCamSnapVel);
 
-	void CVehicle::WeaponState(int userId=-1, bool shooting=false, int fireMode=0 );
+	// [webport] Was "void CVehicle::WeaponState(...)" -- a qualified name on a
+	// member declared inside its own class. MSVC 7.1 accepted that; standard
+	// C++ forbids it and clang rejects it.
+	void WeaponState(int userId=-1, bool shooting=false, int fireMode=0 );
 
 	bool	CrossOnScreen() { return m_bCrossOnScreen; }
 

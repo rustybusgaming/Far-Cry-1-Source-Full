@@ -10,9 +10,9 @@
 //
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
+#include "StdAfx.h"
 #include "XSystemServer.h"
-#include <I3dengine.h>
+#include <I3DEngine.h>
 
 #include <IEntitySystem.h>
 
@@ -815,7 +815,10 @@ void CXServer::UpdateXServerNetwork()
 {
 	FUNCTION_PROFILER( GetISystem(), PROFILE_GAME );
 	if(m_pIServer)
-		m_pIServer->Update(GetCurrentTime());
+		// [webport] GetCurrentTime() is a Win32 macro for GetTickCount,
+		// reached through windows.h. This is the same milliseconds-since-
+		// start value Game.cpp's own GetCurrentTime macro computes.
+		m_pIServer->Update((unsigned int)(GetISystem()->GetITimer()->GetCurrTime() * 1000.f));
 };
 
 ///////////////////////////////////////////////

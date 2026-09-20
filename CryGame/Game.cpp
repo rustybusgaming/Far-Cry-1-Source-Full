@@ -10,7 +10,7 @@
 //
 //////////////////////////////////////////////////////////////////////
  
-#include "stdafx.h"
+#include "StdAfx.h"
 #include <IStreamEngine.h>
 #include <ICryPak.h>
 #include "Game.h"
@@ -78,11 +78,26 @@ typedef std::vector< TCHAR > tvector;
  
 //////////////////////////////////////////////////////////////////////////
 // Pointer to Global ISystem.
+//
+// [webport] CrySystem/System.cpp defines GetISystem() too. That was fine when
+// each module was its own DLL with its own copy of the global; in a static
+// build the two collide and the link fails on a duplicate symbol.
+//
+// CrySystem's is the real one: CreateSystemInterface sets it, so it is
+// already correct before CryGame exists, and every GetISystem() call in this
+// module now resolves to it. Keeping CryGame's would be worse than a
+// duplicate -- it is null until CXGame::Init runs, so anything in this module
+// calling GetISystem() before then would get null from its own copy while a
+// perfectly good pointer sat in the other one.
+//
+// The assignment in CXGame::Init is kept, and checks the two agree.
+#if !defined(_CRY_WEBPORT)
 static ISystem* gISystem = 0;
 ISystem* GetISystem()
 {
 	return gISystem;
 }
+#endif
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 // DLL Interface
@@ -532,7 +547,18 @@ bool CXGame::Init(struct ISystem *pSystem,bool bDedicatedSrv,bool bInEditor,cons
 
 	m_pGameMods = new CGameMods(this);
 
+#if defined(_CRY_WEBPORT)
+	// [webport] The global lives in CrySystem now; see the note at the top of
+	// this file. CreateSystemInterface has already set it, so this asserts
+	// that the engine handed us the same system rather than setting anything.
+	if (GetISystem() != pSystem)
+	{
+		pSystem->GetILog()->LogError("CXGame::Init was given a different "
+		                             "ISystem than the global one");
+	}
+#else
 	gISystem = pSystem;
+#endif
 	m_bDedicatedServer=bDedicatedSrv;
 	m_XAreaMgr.Init( pSystem );
 	m_bEditor=bInEditor;
@@ -765,7 +791,7 @@ bool CXGame::Run(bool &bRelaunch)
 
 #if !defined(_XBOX) && !defined(PS2) && !defined(LINUX)
 #include <Mmsystem.h>
-#include ".\game.h"
+#include "./Game.h"
 #pragma comment (lib , "Winmm.lib")
 #else
 #define GetCurrentTime() ((unsigned int)(GetSystem()->GetITimer()->GetCurrTime() * 1000.f))

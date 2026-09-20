@@ -260,6 +260,10 @@ MODULES = {
                     "incs": ["FreeType2/include", "FreeType2/include/freetype/config",
                              "FreeType2"]},
     "CryInput":    {"kind": "sources", "incs": []},
+    # The game module itself. Never part of any earlier census: it was not in
+    # the build at all, which is the single reason nothing but test geometry
+    # has ever appeared on screen.
+    "CryGame":     {"kind": "sources", "incs": []},
     "CryNetwork":  {"kind": "sources", "incs": []},
     "CryAISystem": {"kind": "sources", "incs": []},
     # vorbisfile.h is included by bare name, so OggVorbisInclude/vorbis has

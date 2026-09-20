@@ -60,6 +60,8 @@
 
 #include "NULL_Renderer.h"
 
+#include "CryPassDesc.h"
+
 class CGLESRenderer : public CNULLRenderer
 {
 public:
@@ -220,6 +222,45 @@ private:
 	void*			m_pDynPool;
 	int				m_nDynPoolVerts;
 	int				m_nDynPoolUsed;
+
+	//////////////////////////////////////////////////////////////////////
+	// The current texture stage, as the engine last described it.
+	//
+	// SetColorOp is how everything outside the shader system asks for a
+	// stage configuration: the sky, decals, rain, butterflies, the script
+	// renderer. CNULLRenderer's implementation is an empty inline, so every
+	// one of those requests was dropped and every draw came out as
+	// "texture times vertex colour" regardless of what was asked for.
+	//
+	// Several of those callers ask for eCA_Constant -- texture times a
+	// material colour -- which made the loss visible: the colour they set
+	// with SetMaterialColor had nowhere to go.
+	//////////////////////////////////////////////////////////////////////
+	byte			m_eColorOp;
+	byte			m_eAlphaOp;
+	byte			m_eColorArg;
+	byte			m_eAlphaArg;
+
+	//! The constant colour, from SetMaterialColor. Direct3D calls it the
+	//! texture factor; the generated shaders call it uConstColor.
+	float			m_fMaterialColor[4];
+
+public:
+	virtual void	SetColorOp(byte eCo, byte eAo, byte eCa, byte eAa);
+	virtual void	SetMaterialColor(float r, float g, float b, float a);
+	virtual void	SetCullMode(int mode = R_CULL_BACK);
+
+private:
+	//! The pass description for the current stage, with bHasTexture filled in
+	//! from what is bound right now and the alpha test from m_CurState.
+	//!
+	//! Both of those are draw-time facts rather than things SetColorOp knows,
+	//! which is why this is built per draw rather than cached alongside the
+	//! stage.
+	SCryPassDesc	CurrentPass() const;
+
+	//! Push the constant colour into a program that declares it.
+	void			ApplyMaterialColor(const struct SGLESProgram* pProgram) const;
 };
 
 #endif //_CRY_GLES_RENDERER_H_

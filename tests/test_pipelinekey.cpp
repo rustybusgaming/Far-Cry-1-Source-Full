@@ -46,7 +46,7 @@ static SWGPUPipelineDesc MakeBaseline()
 	d.shader.stages[0].nAlphaOp  = eCO_MODULATE;
 	d.shader.stages[0].nAlphaArg = DEF_TEXARG0;
 
-	WGPUStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA, d.state);
+	CryStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA, d.state);
 
 	d.nVertexFormat = VERTEX_FORMAT_P3F_COL4UB_TEX2F;
 	d.nPrimType     = R_PRIMV_TRIANGLES;
@@ -85,7 +85,7 @@ static void TestShaderChangesKey()
 	      "an extra stage changes the key");
 
 	d = base;
-	d.shader.nAlphaTest = eWGPUAlphaTest_GreaterEqual;
+	d.shader.nAlphaTest = eCryAlphaTest_GreaterEqual;
 	d.shader.fAlphaRef  = 0.5f;
 	CHECK(WGPUPipeline_Key(base) != WGPUPipeline_Key(d),
 	      "an alpha test changes the key");
@@ -96,18 +96,18 @@ static void TestStateChangesKey()
 	const SWGPUPipelineDesc base = MakeBaseline();
 
 	SWGPUPipelineDesc d = base;
-	WGPUStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, d.state);
+	CryStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, d.state);
 	CHECK(WGPUPipeline_Key(base) != WGPUPipeline_Key(d),
 	      "additive instead of alpha blending changes the key");
 
 	d = base;
-	WGPUStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA | GS_DEPTHWRITE,
+	CryStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA | GS_DEPTHWRITE,
 	                    d.state);
 	CHECK(WGPUPipeline_Key(base) != WGPUPipeline_Key(d),
 	      "turning on depth writing changes the key");
 
 	d = base;
-	WGPUStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA | GS_NOCOLMASK,
+	CryStateGen_Decode(GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA | GS_NOCOLMASK,
 	                    d.state);
 	CHECK(WGPUPipeline_Key(base) != WGPUPipeline_Key(d),
 	      "a colour write mask changes the key");
@@ -145,14 +145,14 @@ static void TestNoCollisionsAcrossRealisticPasses()
 	set[n] = MakeBaseline(); ++n;								// textured, alpha blended
 
 	set[n] = MakeBaseline();									// opaque
-	WGPUStateGen_Decode(GS_DEPTHWRITE, set[n].state); ++n;
+	CryStateGen_Decode(GS_DEPTHWRITE, set[n].state); ++n;
 
 	set[n] = MakeBaseline();									// additive particle
-	WGPUStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, set[n].state); ++n;
+	CryStateGen_Decode(GS_BLSRC_ONE | GS_BLDST_ONE, set[n].state); ++n;
 
 	set[n] = MakeBaseline();									// alpha-tested foliage
-	WGPUStateGen_Decode(GS_DEPTHWRITE | GS_ALPHATEST_GEQUAL128, set[n].state);
-	set[n].shader.nAlphaTest = eWGPUAlphaTest_GreaterEqual;
+	CryStateGen_Decode(GS_DEPTHWRITE | GS_ALPHATEST_GEQUAL128, set[n].state);
+	set[n].shader.nAlphaTest = eCryAlphaTest_GreaterEqual;
 	set[n].shader.fAlphaRef  = 128.0f / 255.0f; ++n;
 
 	set[n] = MakeBaseline();									// two-stage detail

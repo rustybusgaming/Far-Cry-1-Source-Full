@@ -31,6 +31,7 @@
 #include "GLESRenderer.h"
 #include "GLESContext.h"
 #include "GLESShader.h"
+#include "GLESState.h"
 #include "GLESTexture.h"
 
 #include <map>
@@ -322,7 +323,10 @@ void CGLESRenderer::DrawBuffer(CVertexBuffer* src, SVertexStream* indicies,
 	if (!nVBO)
 		return;
 
-	const SGLESProgram* pProgram = GLESShader_GetDynamic();
+	// The program follows the stage the engine last described, plus two facts
+	// only known now: whether a texture is bound, and the alpha test carried
+	// in the render state. CurrentPass folds those in.
+	const SGLESProgram* pProgram = GLESShader_GetForPass(CurrentPass());
 	if (!pProgram)
 		return;
 
@@ -376,11 +380,25 @@ void CGLESRenderer::DrawBuffer(CVertexBuffer* src, SVertexStream* indicies,
 	if (pProgram->nMVP >= 0)
 		glUniformMatrix4fv(pProgram->nMVP, 1, GL_FALSE, m_matMVP);
 
-	const bool bTextured = GLESTexture_IsBound();
-	if (pProgram->nUseTexture >= 0)
-		glUniform1i(pProgram->nUseTexture, bTextured ? 1 : 0);
-	if (bTextured && pProgram->nSampler >= 0)
-		glUniform1i(pProgram->nSampler, 0);
+	// The engine's render state. EF_SetState only ever recorded it into
+	// m_CurState -- this is where it reaches GL. Everything that asked for
+	// alpha blending drew opaque until it did.
+	GLESState_Apply(m_CurState);
+
+	// The constant colour, for a stage that names eCA_Constant. Everything
+	// that sets it -- decals, rain, the sky -- was setting it into a renderer
+	// that dropped it.
+	ApplyMaterialColor(pProgram);
+
+	// Point each stage's sampler at its texture unit. Only stage 0 is ever
+	// bound today -- the engine's multi-texture paths do not reach here yet --
+	// but the loop is over the program's stages so that adding one does not
+	// need this code changed as well.
+	for (int nStage = 0; nStage < pProgram->nStages; ++nStage)
+	{
+		if (pProgram->nSamplers[nStage] >= 0)
+			glUniform1i(pProgram->nSamplers[nStage], nStage);
+	}
 
 	if (nIBO && numindices > 0)
 	{

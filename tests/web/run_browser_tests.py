@@ -74,6 +74,14 @@ def main():
     want_corner = rgb_arg("--expect-corner")
     want_tex    = rgb_arg("--expect-textured")
     want_static = rgb_arg("--expect-static")
+    want_const  = rgb_arg("--expect-constant")
+
+    # The shader conformance run: generated GLSL compiled by the real driver,
+    # drawn, and read back. This is the only check in the suite that proves a
+    # generated shader COMPILES rather than merely reads correctly, so a run
+    # that reports fewer passes than cases is a failure even when every pixel
+    # assertion above is satisfied.
+    want_conformance = "--expect-shader-conformance" in sys.argv
 
     page = os.path.abspath(sys.argv[1])
     directory = os.path.dirname(page)
@@ -94,7 +102,9 @@ def main():
         return 0
 
     httpd, port = serve(directory)
-    url = "http://127.0.0.1:%d/%s" % (port, name)
+    # ?nodata skips the game-data picker. Without it the page waits behind a
+    # dialog for a folder no CI runner has, and every browser test times out.
+    url = "http://127.0.0.1:%d/%s?nodata" % (port, name)
     print("serving %s at %s" % (directory, url))
 
     failures = None
@@ -152,7 +162,8 @@ def main():
                     for name, want, prefix in (("centre", want_centre, "__cryCentre"),
                                                ("corner", want_corner, "__cryCorner"),
                                                ("texture", want_tex, "__cryTex"),
-                                               ("static", want_static, "__cryStatic")):
+                                               ("static", want_static, "__cryStatic"),
+                                               ("const", want_const, "__cryConst")):
                         if want is None:
                             continue
                         pg.wait_for_function(
@@ -163,6 +174,21 @@ def main():
                         ok = all(abs(a - b) <= 1 for a, b in zip(got, want))
                         print("%-6s pixel %s (wanted %s) %s"
                               % (name, got, want, "ok" if ok else "MISMATCH"))
+                        if not ok:
+                            failures += 1
+
+                    if want_conformance:
+                        pg.wait_for_function(
+                            "window.__cryConformTotal !== undefined", timeout=60000)
+                        nPassed = pg.evaluate("window.__cryConformPassed")
+                        nTotal  = pg.evaluate("window.__cryConformTotal")
+
+                        # Zero cases is not a pass. A run that built no cases at
+                        # all -- no context, no framebuffer -- would otherwise
+                        # report 0 of 0 and read as success.
+                        ok = nTotal > 0 and nPassed == nTotal
+                        print("shader conformance %d/%d %s"
+                              % (nPassed, nTotal, "ok" if ok else "FAILED"))
                         if not ok:
                             failures += 1
             else:

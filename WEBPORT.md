@@ -1057,12 +1057,13 @@ fn fs_main(in : VSOut) -> @location(0) vec4f {
 - **Stage 0's "previous" is the diffuse colour**, not black or white. That is
   what makes a lone `eCO_MODULATE` against `eCA_Previous` produce "texture times
   vertex colour" rather than "texture times nothing". Asserted.
-- **Three operations are rejected rather than approximated.**
-  `eCO_MULTIPLYADD` needs a third argument the packing has no room for;
-  `eCO_BUMPENVMAP` needs the stage's bump matrix; `eCO_BLEND` needs a blend
-  factor from render state. All three fail the build with a named reason. A
-  shader that fails to build is a visible problem; one that silently computes
-  something else costs days.
+- **Two operations are rejected rather than approximated.** `eCO_BUMPENVMAP`
+  needs the stage's bump matrix; `eCO_BLEND` needs a blend factor from render
+  state. Both fail the build with a named reason. A shader that fails to build
+  is a visible problem; one that silently computes something else costs days.
+
+  `eCO_MULTIPLYADD` used to be a third, on the grounds that it needs an
+  argument the packing had no room for. **That was wrong** — see below.
 - **Alpha test becomes a `discard`.** WebGPU has no alpha-test render state — it
   went with the rest of the fixed-function pipeline.
 - **The BGRA swizzle is here too**, for the same reason as WebGL2: the engine
@@ -1092,6 +1093,38 @@ the emitted code's **structure** and not only its contents:
 Neither is a WGSL parser, and neither pretends to be. They are the smallest
 rules that catch the mistakes actually available to this code, and both were
 confirmed to fail against the old generator before being kept.
+
+### Four operations translated from the name, and wrong
+
+The first version of this translation read each operation's name and emitted
+what the name means in most graphics APIs. Four of them mean something else in
+*this* engine, and all four produced something plausible on screen while doing
+it — which is the failure mode that costs days.
+
+The authority is not the name. It is `XRenderD3D9/D3DRendPipeline.cpp`, which
+maps every operation to a `D3DTOP_*`:
+
+| Operation | Was translated as | Is actually |
+|---|---|---|
+| `eCO_MULTIPLYADD` | refused, "no room for a third argument" | `arg0 + arg1 * arg2` |
+| `eCO_LERP` | interpolate by the first argument's alpha | `mix(arg1, arg0, arg2)` |
+| `eCO_DECAL` | blend over the accumulator by texture alpha | select `arg0`, same as `eCO_REPLACE` |
+| `eCO_DETAIL` | `MODULATE2X` | a plain modulate |
+
+**There is a third argument.** `ShaderParse.cpp` packs it at bits 6-8 of
+`m_eColorArg`, and the Direct3D backend reads it into `D3DTSS_COLORARG0`. The
+refusal of `eCO_MULTIPLYADD` was built on not having looked.
+
+**And the engine truncates it.** `m_eColorArg` is a `byte`, so
+`eCA_Constant << 6` is 256 and does not fit — a shader asking for the constant
+colour as its third argument silently gets `eCA_Specular`. The Direct3D
+backend's own `case eCA_Constant` in that switch is unreachable. This is not
+corrected here: a Far Cry shader was authored against the engine that
+truncates, so reproducing the truncation is what renders what the artist saw.
+
+All four corrections are verified by the conformance run below, not merely
+asserted — `eCO_LERP` in particular used to return its first argument unchanged
+whenever the texture was opaque, which looks exactly like a working select.
 
 ### The cache key
 
@@ -1205,10 +1238,321 @@ The CI artifact ships `serve_web.py` and a `README.txt` alongside the three
 build files, because downloading them and double-clicking the HTML is the
 obvious thing to do and the resulting error names the wrong culprit.
 
+## The stage model, verified rather than asserted
+
+The WebGL2 backend used to have **one hardcoded program**: texture times vertex
+colour, or vertex colour alone. That is `eCO_MODULATE` with `DEF_TEXARG0` and
+nothing else. It now translates the same description the WebGPU backend does,
+through the same operation table.
+
+### One table, two languages
+
+`Common/CryPassGen.cpp` holds every decision — what `eCO_MODULATE` does, that
+`eCO_DETAIL` is `MODULATE2X` in this engine's usage, what `eCO_DOTPRODUCT3`
+biases, which three operations are refused. The two languages differ only in
+`SCryShaderDialect`: how a vec4 constructor is spelled, how a local is declared,
+how a texture is sampled.
+
+That is deliberately small. If something bigger than spelling has to differ, the
+difference is real and belongs in a backend.
+
+Written twice, those decisions drift — one backend gets a fix and the other does
+not — and since WebGPU cannot run in this container at all, the divergence would
+be invisible until something rendered wrong on hardware nobody has to hand.
+
+### Compiling the output, not just reading it
+
+`RenderDll/XRenderGLES/GLESConform.cpp` builds six generated programs through
+the real GLES driver, draws with each into an off-screen target, and reads the
+pixel back. The expected colours are worked out by hand from what each operation
+is *defined* to do — not from what the generator emits, or the test would only
+prove the generator agrees with itself.
+
+| Case | Why it is there |
+|---|---|
+| one stage, modulate | the commonest pass in the engine |
+| one stage, no texture | `eCA_Texture` must read as white, not black |
+| two stages, modulate | **the case the WGSL generator got wrong** |
+| two stages, add | a different wrong answer if the two texels were confused |
+| alpha test that keeps | the threshold is applied at all |
+| alpha test that discards | `GS_ALPHATEST_LESS128` keeps fragments *below* |
+
+Confirmed non-vacuous by putting the duplicate-`texel` bug back and rebuilding.
+The driver's own message:
+
+```
+ERROR: 0:21: 'texel' : redefinition
+[error]   FAIL two stages, second modulates the first (program did not build)
+shader conformance 4/6 FAILED
+```
+
+That is the compiler catching what no assertion about emitted text could. It
+runs as part of `web_host_frames`, so it is in CI.
+
+**What this is and is not evidence for.** Both backends share the operation
+table, so a passing case here says something about the WGSL path too — the only
+evidence that path can get without an adapter. It says nothing about WGSL's own
+bindings and entry points, which remain unverified.
+
+## The render state was being thrown away
+
+`CRenderer::EF_SetState` does one thing: `m_CurState = st`. That is Crytek's
+own null-renderer implementation, which this backend inherits, and **nothing
+downstream of it ever touched GL**.
+
+So every call the engine makes was recorded and silently dropped. `CRESky`
+asking for `GS_BLSRC_SRCALPHA | GS_BLDST_ONEMINUSSRCALPHA`, CryFont asking for
+alpha blending to draw text, anything asking not to write depth — all ignored.
+
+The visible symptom is that everything draws opaque: black boxes around text, a
+sky that is a wall, nothing see-through that should be. It looks like a bug in
+whatever drew it, which is the wrong place to look.
+
+`GLESState.cpp` closes it, decoding through the same `CryStateGen` the WebGPU
+backend uses and turning the neutral enums into GL calls, one line each. The
+decision half stays testable without a context; only the GL half is here.
+
+### The cache, and what it cost
+
+The engine sets state per draw and most draws in a row want the same state, so
+the last word applied is remembered. Every GL call here crosses into
+JavaScript, so that is worth having.
+
+It also introduces a way to be wrong. Four places set the same GL state behind
+this file's back — the frame's clear forces the depth mask, 2D mode forces the
+depth test off, `PS2SetDefaultState` sets the whole pipeline, and the
+conformance run disables blending. Each now invalidates the cache. Without
+that, the next draw carrying an unchanged state word would be skipped as
+already-applied and would silently inherit whatever the other code left behind.
+
+### Verified by readback, and confirmed non-vacuous
+
+Five render-state cases run alongside the shader ones: each draws a background,
+then draws over it with the state under test, and reads back what the two
+produced together.
+
+The background and the source are **different colours** on purpose. An earlier
+draft drew the same quad twice, which made "the background survives" and "the
+source survives" the same expected value — so a state that never reached GL
+would have passed the case meant to prove it had.
+
+Confirmed by making `GLESState_Apply` a no-op:
+
+```
+FAIL additive blending sums with the background   (got 64,32,16,255 expected 192,160,144,255)
+FAIL zero source factor leaves the background     (got 64,32,16,255 expected 128,128,128,255)
+FAIL alpha-only colour mask leaves RGB alone      (got 64,32,16,255 expected 128,128,128,255)
+```
+
+All three return the source unchanged, which is exactly the signature of a
+dropped state.
+
+Two things are decoded and still not applied, deliberately. The **alpha test**
+has no GLES 3.0 state and is compiled into the fragment shader as a `discard`
+instead, from the same decoded description. **Stencil** has no buffer yet, and
+enabling the test against an absent attachment would discard everything.
+
+## The engine describes stages, and the backend was ignoring that too
+
+`SetColorOp(eCo, eAo, eCa, eAa)` carries exactly the four fields of a texture
+stage, and it is how everything outside the shader system asks for one:
+
+| Caller | Asks for |
+|---|---|
+| `Cry3DEngine/DecalManager.cpp` | texture × constant |
+| `Cry3DEngine/rain.cpp` | texture × constant |
+| `Cry3DEngine/bflyes.cpp` | texture × constant |
+| `Common/RendElements/CRESky.cpp` | texture × constant |
+| `CrySystem/ScriptObjectSystem.cpp` | modulate, and `eCO_REPLACE` |
+| `CryGame/ScriptObjectRenderer.cpp` | modulate |
+
+`CNULLRenderer::SetColorOp` is `{}` — an empty inline — and `SetMaterialColor`
+is an empty function beside it. Both were inherited, so **every one of those
+requests was dropped**. Each of those callers sets a material colour that then
+had nowhere to go, and every draw came out as "texture times vertex colour"
+whatever it asked for.
+
+Both are now implemented. Nothing is compiled inside them: the description is
+recorded, and the program is fetched at draw time, because two of the fields
+the generator needs are not known until then — whether a texture is bound, and
+the alpha test carried in the render state. `CurrentPass()` folds those in,
+which is also what finally makes `m_CurState`'s alpha-test bits mean something.
+
+`SetCullMode` was a no-op from the same source and is implemented alongside.
+`R_CULL_DISABLE` and `R_CULL_NONE` are the same value, so there are three modes
+and not four.
+
+### Verified through the engine's own API
+
+A fifth quad in the browser host draws the way the sky and decals do — 
+`SetColorOp` with `eCA_Constant`, then `SetMaterialColor` — and the browser
+test reads it back as `224,96,32`.
+
+It is drawn with **white vertices** on purpose. A backend that ignores
+`SetColorOp` falls back to "texture times vertex colour", which with white
+vertices and no texture is white. The old behaviour cannot be mistaken for the
+new one. Confirmed by restoring the inherited no-op:
+
+```
+const  pixel [255, 255, 255] (wanted [224, 96, 32]) MISMATCH
+```
+
+## The game module
+
+**CryGame was never in this build.** Not excluded, not stubbed: it was absent
+from `add_subdirectory`, from every module list, and from every compile census.
+93 translation units, 3 MB of source, zero of it ever compiled.
+
+That is the single reason the browser host only ever showed test geometry.
+Everything ported before it is engine; CryGame is what owns players, vehicles,
+weapons, the UI, mission logic and level loading.
+
+### Compiling it: 0/93 to 93/93
+
+Three things, and no more:
+
+- **104 case-sensitive include corrections.** Windows does not care that
+  `stdafx.h` is `StdAfx.h` or that `ibitstream.h` is `CryCommon/IBitStream.h`.
+  `tools/fix_includes.py` already existed for exactly this and had never been
+  pointed here. Running it over `CryGame` **alone** fixed 97 and left the module
+  at 0/93: it indexes only the roots it is given, so cross-module includes went
+  unresolved. The tool was right; the invocation was wrong.
+- **Two header declarations** MSVC 7.1 accepted and standard C++ does not — a
+  member qualified with its own class name, and a `friend class` used as though
+  it were a forward declaration. Both headers are included nearly everywhere in
+  the module, so two lines unblocked dozens of units.
+- **Nine files** of the usual residue: addresses of temporaries, a Win32
+  `GetCurrentTime`, an `imagehlp` directory call, a pointer squeezed into an
+  `int`, and an `INT_MIN` that arrived through `windows.h`.
+
+Two more surfaced only under Emscripten, because both were guarded by
+`#if defined(LINUX64)` and the wasm build is `LINUX32`:
+
+- `SetConfigToActionMap` walked its `va_list` as an array of pointers. That
+  assumes `va_list` **is** a pointer into the argument block — true of the old
+  32-bit x86 ABI, false in general, and under Emscripten it is `void*`, so the
+  arithmetic does not compile. `va_arg` is correct everywhere and is now the
+  only branch.
+- `SendScriptEvent(event, NULL)` is ambiguous across three overloads wherever
+  `NULL` is `__null`. Crytek hit this themselves and disambiguated to the `int`
+  overload for 64-bit Linux; that choice is now the only one.
+
+### Linking it
+
+Zero undefined symbols, first attempt, on both targets — with one collision.
+`GetISystem()` is defined by **both** CrySystem and CryGame. Fine as two DLLs
+with a copy each; a duplicate symbol in one binary.
+
+CrySystem's is the real one, and keeping CryGame's would have been worse than
+the duplicate: it is null until `CXGame::Init` runs, so anything in the module
+calling `GetISystem()` before then would read null from its own copy while a
+perfectly good pointer sat in the other.
+
+### Calling it
+
+`ISystem::CreateGame` normally loads `CryGame.dll`. It does not need to:
+`SGameInitParams::pGame` is an injection point `CSystem` checks **before** it
+looks at `sGameDLL`, so handing it an instance we constructed skips the loader
+entirely. Crytek's own code, already there.
+
+`IGame::Run` is `while(1) { if (!Update()) break; }` — so the browser inversion
+is one call. `Update()` is already public on `IGame`.
+
+**The game now initialises and runs**, and stops exactly where it should:
+
+```
+Creating the game...
+Game Initialization
+[error] Unable to open scripts/classregistry.lua
+[error] Cannot find EntityClassRegistry table in scripts (wrong working folder?)
+[error] Unable to open scripts/main.lua
+```
+
+Those are **assets**. Which is the wall, and it is not a code wall.
+
+### One regression this caused
+
+All five proof-of-life quads went black the moment the game's `Update` ran.
+Not a bug in the game: it owns the frame, correctly, and the host had been
+drawing underneath it.
+
+Isolated by suppressing the game's `Update` and watching the quads return, which
+distinguishes it from `Init` having corrupted renderer state. The quads are now
+drawn **after** the game, as an overlay, so the diagnostics keep working without
+taking the frame away from the thing that should own it.
+
+## Running it against your own copy of the game
+
+**The data cannot come from here.** Far Cry's assets are several GB and are not
+redistributable. They cannot be committed to this repository, baked into a
+build, or shipped in a CI artifact — and owning the game does not change that:
+a licence to play is not a licence to publish. If you own it, keep your copy on
+your own machine; do not add it to a fork.
+
+So every route into the engine starts from a path supplied at run time.
+
+### Natively
+
+```bash
+build/Headless/Headless --data /path/to/FarCry
+```
+
+That directory becomes the working directory, which is all the engine needs:
+CryPak reads everything through paths relative to it. The host then reports
+what is actually there before the engine starts.
+
+### In a browser
+
+There is no installation to point at, so the page asks. A folder picker writes
+the chosen files into the page's own in-memory filesystem, and the root is set
+to where they landed. **Nothing is uploaded**: the files are read in the tab and
+never leave the machine. `Web/WebAssets.cpp`.
+
+Two things about it are worth stating plainly.
+
+**It has a hard size limit, and says so up front.** That filesystem is RAM. A
+whole installation will not fit, so a folder over the budget is refused with an
+explanation rather than left to fail at an allocation somewhere unrelated.
+Scripts, fonts and configuration fit comfortably — and they are exactly what
+stands between the engine booting and the engine getting past script loading.
+A full level needs a different mechanism: reading ranges out of a `File` without
+copying it, which needs synchronous reads the main thread does not have.
+
+**The host waits for the choice.** Picking a folder is asynchronous and
+`CreateSystemInterface` is not, and there is no point inside engine startup
+where a file dialog can be awaited. So `main()` puts the picker up and returns;
+the engine is created afterwards. Same inversion as the WebGPU device
+acquisition, same reason.
+
+`?nodata` in the URL skips the dialog. Not a debug hatch — it is how anything
+unattended runs, including every browser test, which would otherwise sit behind
+a dialog waiting for a folder no CI runner has.
+
+### Verified without any game data
+
+`tests/make_synthetic_assets.py` builds a tree of placeholders: an empty zip, an
+empty font element, a two-line Lua file. No Far Cry content, and there cannot
+be any.
+
+That is enough, because the thing worth testing is whether the root reaches the
+engine's file layer — and the engine does not care what is inside the files at
+the point where it decides where to look. The test asserts on the **engine's**
+output rather than the host's:
+
+```
+Opening pack file /tmp/.../FCData/Localized/english.pak
+```
+
+A host can set a working directory and print a confident report while CryPak
+never consults it; the log looks identical either way. So the test also runs the
+negative case — the same engine without `--data` must not reach that path — or a
+root that happened to be reachable would pass as a working feature.
+
 ### Next
 
-Feeding real `SShaderPass` data through this, which needs the engine to reach a
-draw with a shader bound. After that the register-combiner and assembly paths —
+Feeding a whole `SShaderPass` through this rather than one stage at a time,
+which needs the engine to reach a draw with a shader bound — and that needs
+game data, since `.efx` shader scripts are assets. After that the register-combiner and assembly paths —
 and those need both a GPU and a copy of the game, since `.efx` shader scripts
 are assets and are not in this tree.
 

@@ -184,6 +184,12 @@ typedef struct UISkinTexture
 //------------------------------------------------------------------------------------------------- 
 //------------------------------------------------------------------------------------------------- 
 
+// [webport] The "friend class CUIScreen;" inside the class below is NOT a
+// declaration of CUIScreen in this scope -- standard C++ does not make a
+// befriended name findable by ordinary lookup, though MSVC 7.1 did. The
+// member pointer needs a real forward declaration.
+class CUIScreen;
+
 class CUIWidget;
 class CUISystem;
 

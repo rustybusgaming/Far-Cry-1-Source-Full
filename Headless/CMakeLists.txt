@@ -10,7 +10,8 @@
 # that; see cmake/CryModule.cmake for why, and why wasm needs the opposite.
 ################################################################################
 
-add_executable(Headless HeadlessMain.cpp)
+add_executable(Headless HeadlessMain.cpp
+               "${CMAKE_SOURCE_DIR}/Hosts/CryAssetRoot.cpp")
 cry_apply_common_settings(Headless)
 
 target_include_directories(Headless PRIVATE
@@ -21,6 +22,7 @@ target_include_directories(Headless PRIVATE
 # Shared with tests/, which links the same set for test_static_modules.
 set(CRY_HEADLESS_MODULES
     CrySystem
+    CryGame
     CryStaticModules
     CryLua
     CryFreeType

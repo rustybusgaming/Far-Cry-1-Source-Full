@@ -18,7 +18,7 @@
 #include "UISystem.h"
 
 #if !defined(WIN64) && !defined(LINUX) && !defined(NOT_USE_BINK_SDK)
-#	include "../binksdk/bink.h"
+#	include "../BinkSDK/bink.h"
 #endif
 
 

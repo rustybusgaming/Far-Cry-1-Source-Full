@@ -33,13 +33,13 @@
 */
 
 #include "WGPUShaderGen.h"
-#include "WGPUStateGen.h"
+#include "CryStateGen.h"
 
 //! Everything that makes one pipeline different from another.
 struct SWGPUPipelineDesc
 {
-	SWGPUShaderDesc	shader;
-	SWGPUStateDesc	state;
+	SCryPassDesc	shader;
+	SCryStateDesc	state;
 
 	int				nVertexFormat;	//!< the engine's VERTEX_FORMAT_* value
 	int				nPrimType;		//!< R_PRIMV_*

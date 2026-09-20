@@ -11,7 +11,7 @@
 //	
 //////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h" 
+#include "StdAfx.h" 
 
 #include "Game.h"
 #include "XNetwork.h"
@@ -58,22 +58,25 @@ void CXGame::SetConfigToActionMap(const char *pszActionName, ...)
 	ActionInfo &Info=It->second;
 	va_list v;
 	va_start(v, pszActionName);            
-#if defined(LINUX64)
+	// [webport] There were two branches here: LINUX64 used va_arg, everything
+	// else walked the va_list as if it were an array of pointers --
+	// "*(char**)(v += sizeof(char*))".
+	//
+	// That second form is not portable and is not needed. It assumes va_list
+	// IS a pointer into the argument block, which is true of the old 32-bit
+	// x86 ABI and false in general. Under Emscripten va_list is void*, so the
+	// arithmetic is arithmetic on void* and does not compile at all; on any
+	// ABI that passes arguments in registers it would read the wrong memory
+	// rather than failing loudly.
+	//
+	// va_arg is correct on every platform including that one, so the portable
+	// branch is now the only branch.
 	char *sActionMapName=va_arg(v, char*);
 	while (*sActionMapName)
 	{
 		Info.vecSetToActionMap.push_back(string(sActionMapName));
 		sActionMapName=va_arg(v, char*);
 	}
-#else
-	char *sActionMapName=*(char**)v;
-
-	while (*sActionMapName)
-	{
-		Info.vecSetToActionMap.push_back(string(sActionMapName));
-		sActionMapName=*(char**)(v+=sizeof(char*));
-	}
-#endif
 	va_end(v);
 }
 

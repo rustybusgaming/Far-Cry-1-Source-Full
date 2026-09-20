@@ -30,6 +30,8 @@
 
 #include "WGPUShaderGen.h"
 
+#include "shader_structure.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -48,183 +50,26 @@ static bool Has(const std::string& s, const char* szNeedle)
 }
 
 //////////////////////////////////////////////////////////////////////////
-//! Everything below this line answers a specific failure.
+//! Structural validity, on one shader. Called by every test that builds one.
 //!
-//! The tests above assert that the right text APPEARS. That is not the same as
-//! the shader being valid, and the difference was not academic: the generator
-//! emitted "let texel = ..." once per stage into one function scope, so every
-//! multi-stage pass was a redeclaration and failed to compile in the browser --
-//! while every substring assertion here passed, because both stages' text was
-//! present exactly as expected.
-//!
-//! So these check the emitted WGSL's STRUCTURE instead of its contents. They
-//! are not a WGSL parser and cannot be: what they are is the smallest set of
-//! rules that the generator can actually violate.
-//////////////////////////////////////////////////////////////////////////
-
-//////////////////////////////////////////////////////////////////////////
-//! Splits an identifier off the front of a string.
-//////////////////////////////////////////////////////////////////////////
-static bool IsIdentChar(char c)
-{
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-	    || (c >= '0' && c <= '9') || c == '_';
-}
-
-//////////////////////////////////////////////////////////////////////////
-//! No identifier is declared twice within one brace depth of one function.
-//!
-//! WGSL, like C++, rejects a redeclaration in the same scope. The generator
-//! emits a flat sequence of "let" bindings into the fragment function's top
-//! level, so this is exactly the rule it can break.
-//////////////////////////////////////////////////////////////////////////
-static bool DeclarationsAreUnique(const std::string& sWGSL, std::string& sDup)
-{
-	// A declaration's scope is identified by the brace depth it appears at.
-	// The generator never re-enters a depth it has left within one function
-	// (the alpha-test discard is the only nesting, and declares nothing), so
-	// depth alone is a sufficient scope key here.
-	std::string aDeclared[64];		// depth -> space-separated names seen
-	int nDepth = 0;
-
-	size_t i = 0;
-	while (i < sWGSL.size())
-	{
-		const char c = sWGSL[i];
-
-		if (c == '{')
-		{
-			++nDepth;
-			if (nDepth >= 64) { sDup = "brace depth out of range"; return false; }
-			aDeclared[nDepth].clear();
-			++i;
-			continue;
-		}
-		if (c == '}')
-		{
-			if (nDepth > 0) --nDepth;
-			++i;
-			continue;
-		}
-
-		// "let" or "var" at the start of a token.
-		const bool bAtTokenStart = (i == 0) || !IsIdentChar(sWGSL[i - 1]);
-		const bool bLet = bAtTokenStart && sWGSL.compare(i, 4, "let ") == 0;
-		const bool bVar = bAtTokenStart && sWGSL.compare(i, 4, "var ") == 0;
-
-		if (!bLet && !bVar)
-		{
-			++i;
-			continue;
-		}
-
-		size_t j = i + 4;
-		while (j < sWGSL.size() && sWGSL[j] == ' ') ++j;
-
-		const size_t nStart = j;
-		while (j < sWGSL.size() && IsIdentChar(sWGSL[j])) ++j;
-
-		if (j == nStart) { i += 4; continue; }
-
-		const std::string sName = sWGSL.substr(nStart, j - nStart);
-
-		// Module-scope "var" declarations are the bindings, which carry
-		// attributes and are handled by the binding assertions elsewhere.
-		if (nDepth > 0)
-		{
-			const std::string sKey = " " + sName + " ";
-			if (aDeclared[nDepth].find(sKey) != std::string::npos)
-			{
-				sDup = sName;
-				return false;
-			}
-			aDeclared[nDepth] += sKey;
-		}
-
-		i = j;
-	}
-
-	return true;
-}
-
-//////////////////////////////////////////////////////////////////////////
-//! Every local the generator names is declared before it is used.
-//!
-//! Restricted to the generator's own naming scheme -- texelN, cN, aN -- which
-//! is where an off-by-one between the emit site and the argument resolver would
-//! show up. A general "is every identifier bound" check would need a real
-//! parser; this needs none and catches the mistake that is actually available.
-//////////////////////////////////////////////////////////////////////////
-static bool GeneratedLocalsAreDeclared(const std::string& sWGSL, std::string& sUndeclared)
-{
-	std::string sDeclared;
-
-	size_t i = 0;
-	while (i < sWGSL.size())
-	{
-		const bool bAtTokenStart = (i == 0) || !IsIdentChar(sWGSL[i - 1]);
-
-		if (!bAtTokenStart || !IsIdentChar(sWGSL[i]))
-		{
-			++i;
-			continue;
-		}
-
-		size_t j = i;
-		while (j < sWGSL.size() && IsIdentChar(sWGSL[j])) ++j;
-
-		const std::string sTok = sWGSL.substr(i, j - i);
-
-		// Is this token one of the generator's per-stage locals?
-		bool bGenerated = false;
-		{
-			size_t nPrefix = 0;
-			if (sTok.compare(0, 5, "texel") == 0)                      nPrefix = 5;
-			else if (sTok.size() > 1 && (sTok[0] == 'c' || sTok[0] == 'a')) nPrefix = 1;
-
-			if (nPrefix && sTok.size() > nPrefix)
-			{
-				bGenerated = true;
-				for (size_t k = nPrefix; k < sTok.size(); ++k)
-					if (sTok[k] < '0' || sTok[k] > '9') { bGenerated = false; break; }
-			}
-		}
-
-		if (bGenerated)
-		{
-			const std::string sKey = " " + sTok + " ";
-			const bool bIsDecl = (i >= 4) && (sWGSL.compare(i - 4, 4, "let ") == 0
-			                               || sWGSL.compare(i - 4, 4, "var ") == 0);
-
-			if (bIsDecl)
-				sDeclared += sKey;
-			else if (sDeclared.find(sKey) == std::string::npos)
-			{
-				sUndeclared = sTok;
-				return false;
-			}
-		}
-
-		i = j;
-	}
-
-	return true;
-}
-
-//////////////////////////////////////////////////////////////////////////
-//! Both structural rules, on one shader. Called by every test that builds one.
+//! The checks themselves are in shader_structure.h, shared with the GLSL ES
+//! generator's tests -- both generators emit their declarations from the same
+//! shared code, so a bug in it has to be catchable from either side. That
+//! header says what the checks are, and which real failure put them there.
 //////////////////////////////////////////////////////////////////////////
 static void CheckWellFormed(const std::string& sWGSL, const char* szWhat)
 {
 	char what[192];
 	std::string sName;
 
-	const bool bUnique = DeclarationsAreUnique(sWGSL, sName);
+	const bool bUnique = CryTest_DeclarationsAreUnique(
+		sWGSL, kWGSLDeclKeywords, 2, sName);
 	snprintf(what, sizeof(what), "%s: no identifier is declared twice in one scope%s%s",
 	         szWhat, bUnique ? "" : " -- duplicate: ", bUnique ? "" : sName.c_str());
 	CHECK(bUnique, what);
 
-	const bool bBound = GeneratedLocalsAreDeclared(sWGSL, sName);
+	const bool bBound = CryTest_GeneratedLocalsAreDeclared(
+		sWGSL, kWGSLDeclKeywords, 2, sName);
 	snprintf(what, sizeof(what), "%s: every generated local is declared%s%s",
 	         szWhat, bBound ? "" : " -- undeclared: ", bBound ? "" : sName.c_str());
 	CHECK(bBound, what);
@@ -239,12 +84,12 @@ static void TestArgPacking()
 {
 	const int nPacked = DEF_TEXARG0;	// eCA_Texture | (eCA_Diffuse << 3)
 
-	CHECK(WGPUShaderGen_Arg0(nPacked) == eCA_Texture,  "DEF_TEXARG0 arg0 is the texture");
-	CHECK(WGPUShaderGen_Arg1(nPacked) == eCA_Diffuse,  "DEF_TEXARG0 arg1 is the diffuse colour");
+	CHECK(CryPass_Arg0(nPacked) == eCA_Texture,  "DEF_TEXARG0 arg0 is the texture");
+	CHECK(CryPass_Arg1(nPacked) == eCA_Diffuse,  "DEF_TEXARG0 arg1 is the diffuse colour");
 
 	const int nPacked1 = DEF_TEXARG1;	// eCA_Texture | (eCA_Previous << 3)
-	CHECK(WGPUShaderGen_Arg0(nPacked1) == eCA_Texture,  "DEF_TEXARG1 arg0 is the texture");
-	CHECK(WGPUShaderGen_Arg1(nPacked1) == eCA_Previous, "DEF_TEXARG1 arg1 is the previous stage");
+	CHECK(CryPass_Arg0(nPacked1) == eCA_Texture,  "DEF_TEXARG1 arg0 is the texture");
+	CHECK(CryPass_Arg1(nPacked1) == eCA_Previous, "DEF_TEXARG1 arg1 is the previous stage");
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -252,7 +97,7 @@ static void TestArgPacking()
 //////////////////////////////////////////////////////////////////////////
 static void TestSingleModulateStage()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 1;
 	desc.stages[0].bHasTexture = true;
 	desc.stages[0].nColorOp  = eCO_MODULATE;
@@ -289,7 +134,7 @@ static void TestSingleModulateStage()
 //////////////////////////////////////////////////////////////////////////
 static void TestPreviousStartsAsDiffuse()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 1;
 	desc.stages[0].bHasTexture = true;
 	desc.stages[0].nColorOp  = eCO_MODULATE;
@@ -309,7 +154,7 @@ static void TestPreviousStartsAsDiffuse()
 //////////////////////////////////////////////////////////////////////////
 static void TestTwoStagesChain()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 2;
 
 	desc.stages[0].bHasTexture = true;
@@ -352,11 +197,14 @@ static void TestTwoStagesChain()
 //////////////////////////////////////////////////////////////////////////
 static void TestUnsupportedOpsAreRejected()
 {
-	const int kUnsupported[] = { eCO_MULTIPLYADD, eCO_BUMPENVMAP, eCO_BLEND };
+	// eCO_MULTIPLYADD was on this list, wrongly: it needs a third argument and
+	// the engine packs one, at bits 6-8. See TestThreeArgumentOps.
+	const int kUnsupported[] = { eCO_BUMPENVMAP, eCO_BLEND };
+	const int kNumUnsupported = 2;
 
-	for (int i = 0; i < 3; ++i)
+	for (int i = 0; i < kNumUnsupported; ++i)
 	{
-		SWGPUShaderDesc desc;
+		SCryPassDesc desc;
 		desc.nStages = 1;
 		desc.stages[0].bHasTexture = true;
 		desc.stages[0].nColorOp  = kUnsupported[i];
@@ -369,13 +217,13 @@ static void TestUnsupportedOpsAreRejected()
 
 		char what[160];
 		snprintf(what, sizeof(what), "%s is rejected rather than approximated",
-		         WGPUShaderGen_OpName(kUnsupported[i]));
+		         CryPass_OpName(kUnsupported[i]));
 		CHECK(!bBuilt, what);
 
 		// The error has to say which stage and which operation, or it is no
 		// use when a real shader fails to build.
 		snprintf(what, sizeof(what), "%s reports a useful reason",
-		         WGPUShaderGen_OpName(kUnsupported[i]));
+		         CryPass_OpName(kUnsupported[i]));
 		CHECK(!sError.empty() && sError.find("stage 0") != std::string::npos, what);
 	}
 }
@@ -385,7 +233,7 @@ static void TestUnsupportedOpsAreRejected()
 //////////////////////////////////////////////////////////////////////////
 static void TestDisabledStageSkipped()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 2;
 
 	desc.stages[0].bHasTexture = true;
@@ -408,7 +256,7 @@ static void TestDisabledStageSkipped()
 //////////////////////////////////////////////////////////////////////////
 static void TestAlphaTestBecomesDiscard()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 1;
 	desc.stages[0].bHasTexture = true;
 	desc.stages[0].nColorOp  = eCO_REPLACE;
@@ -420,7 +268,7 @@ static void TestAlphaTestBecomesDiscard()
 	CHECK(WGPUShaderGen_Build(desc, sNoTest, sError), "builds without an alpha test");
 	CHECK(!Has(sNoTest, "discard"), "no discard when no alpha test is asked for");
 
-	desc.nAlphaTest = eWGPUAlphaTest_GreaterEqual;
+	desc.nAlphaTest = eCryAlphaTest_GreaterEqual;
 	desc.fAlphaRef  = 0.5f;
 	CHECK(WGPUShaderGen_Build(desc, sWithTest, sError), "builds with an alpha test");
 	CHECK(Has(sWithTest, "discard"), "an alpha test emits a discard");
@@ -430,7 +278,7 @@ static void TestAlphaTestBecomesDiscard()
 	// the threshold; emitting the same comparison as the >= tests would invert
 	// every surface that uses it.
 	std::string sLess;
-	desc.nAlphaTest = eWGPUAlphaTest_Less;
+	desc.nAlphaTest = eCryAlphaTest_Less;
 	CHECK(WGPUShaderGen_Build(desc, sLess, sError), "builds a less-than alpha test");
 	CHECK(Has(sLess, "acc.a < 0.5"), "a less-than test emits a < comparison");
 	CHECK(!Has(sLess, "acc.a >= 0.5"), "a less-than test is not emitted as >=");
@@ -442,46 +290,46 @@ static void TestAlphaTestBecomesDiscard()
 //////////////////////////////////////////////////////////////////////////
 static void TestKeyDistinguishesDescriptions()
 {
-	SWGPUShaderDesc a;
+	SCryPassDesc a;
 	a.nStages = 1;
 	a.stages[0].bHasTexture = true;
 	a.stages[0].nColorOp  = eCO_MODULATE;
 	a.stages[0].nColorArg = DEF_TEXARG0;
 
-	SWGPUShaderDesc b = a;
-	CHECK(WGPUShaderGen_Key(a) == WGPUShaderGen_Key(b), "identical descriptions share a key");
+	SCryPassDesc b = a;
+	CHECK(CryPass_Key(a) == CryPass_Key(b), "identical descriptions share a key");
 
 	b.stages[0].nColorOp = eCO_ADD;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(b), "a different operation changes the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(b), "a different operation changes the key");
 
-	SWGPUShaderDesc c = a;
+	SCryPassDesc c = a;
 	c.stages[0].nColorArg = DEF_TEXARG1;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(c), "different arguments change the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(c), "different arguments change the key");
 
-	SWGPUShaderDesc d = a;
+	SCryPassDesc d = a;
 	d.nStages = 2;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(d), "a different stage count changes the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(d), "a different stage count changes the key");
 
-	SWGPUShaderDesc e = a;
-	e.nAlphaTest = eWGPUAlphaTest_GreaterEqual;
+	SCryPassDesc e = a;
+	e.nAlphaTest = eCryAlphaTest_GreaterEqual;
 	e.fAlphaRef  = 0.5f;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(e), "an alpha test changes the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(e), "an alpha test changes the key");
 
 	// Same threshold, opposite direction: different shader, so different key.
-	SWGPUShaderDesc eLess = e;
-	eLess.nAlphaTest = eWGPUAlphaTest_Less;
-	CHECK(WGPUShaderGen_Key(e) != WGPUShaderGen_Key(eLess),
+	SCryPassDesc eLess = e;
+	eLess.nAlphaTest = eCryAlphaTest_Less;
+	CHECK(CryPass_Key(e) != CryPass_Key(eLess),
 	      "the alpha test direction changes the key");
 
-	SWGPUShaderDesc f = a;
+	SCryPassDesc f = a;
 	f.stages[0].bHasTexture = false;
-	CHECK(WGPUShaderGen_Key(a) != WGPUShaderGen_Key(f), "losing the texture changes the key");
+	CHECK(CryPass_Key(a) != CryPass_Key(f), "losing the texture changes the key");
 
 	// The threshold is part of the emitted source, so two different thresholds
 	// cannot share a pipeline either.
-	SWGPUShaderDesc g = e;
+	SCryPassDesc g = e;
 	g.fAlphaRef = 0.25f;
-	CHECK(WGPUShaderGen_Key(e) != WGPUShaderGen_Key(g),
+	CHECK(CryPass_Key(e) != CryPass_Key(g),
 	      "a different alpha threshold changes the key");
 }
 
@@ -491,7 +339,7 @@ static void TestKeyDistinguishesDescriptions()
 //////////////////////////////////////////////////////////////////////////
 static void TestUntexturedStage()
 {
-	SWGPUShaderDesc desc;
+	SCryPassDesc desc;
 	desc.nStages = 1;
 	desc.stages[0].bHasTexture = false;
 	desc.stages[0].nColorOp  = eCO_MODULATE;
@@ -507,6 +355,96 @@ static void TestUntexturedStage()
 	CheckWellFormed(sWGSL, "untextured stage");
 }
 
+//////////////////////////////////////////////////////////////////////////
+//! The operations that read the engine's THIRD packed argument.
+//!
+//! Every one of these was wrong until the shipped Direct3D 9 backend was read
+//! properly. They are asserted against what D3DRendPipeline.cpp actually does,
+//! which is the only authority available -- the shader scripts that exercise
+//! them are game assets and are not in this tree.
+//////////////////////////////////////////////////////////////////////////
+static void TestThreeArgumentOps()
+{
+	// arg0 = texture, arg1 = diffuse, arg2 = constant colour.
+	const int nArgs = eCA_Texture | (eCA_Diffuse << 3) | (eCA_Constant << 6);
+
+	CHECK(CryPass_Arg0(nArgs) == eCA_Texture,  "packed arg0 unpacks");
+	CHECK(CryPass_Arg1(nArgs) == eCA_Diffuse,  "packed arg1 unpacks");
+	CHECK(CryPass_Arg2(nArgs) == eCA_Constant, "packed arg2 unpacks");
+
+	SCryPassDesc desc;
+	desc.nStages = 1;
+	desc.stages[0].bHasTexture = true;
+	desc.stages[0].nAlphaOp  = eCO_REPLACE;
+	desc.stages[0].nAlphaArg = eCA_Texture;
+
+	std::string sWGSL, sError;
+
+	// D3DTOP_MULTIPLYADD is "Arg1 + Arg2 * Arg0", and the engine's Arg0 is the
+	// third packed slot -- so first + second * third.
+	desc.stages[0].nColorOp  = eCO_MULTIPLYADD;
+	desc.stages[0].nColorArg = nArgs;
+	CHECK(WGPUShaderGen_Build(desc, sWGSL, sError),
+	      "eCO_MULTIPLYADD builds now that the third argument is known");
+	CHECK(Has(sWGSL, "(texel0 + diffuse * uConst.color)"),
+	      "eCO_MULTIPLYADD is first + second * third");
+	CheckWellFormed(sWGSL, "multiply-add");
+
+	// D3DTOP_LERP is "Arg0 * Arg1 + (1 - Arg0) * Arg2" -- the factor is the
+	// third argument, a whole colour, not the first argument's alpha.
+	desc.stages[0].nColorOp = eCO_LERP;
+	CHECK(WGPUShaderGen_Build(desc, sWGSL, sError), "eCO_LERP builds");
+	CHECK(Has(sWGSL, "mix(diffuse, texel0, uConst.color)"),
+	      "eCO_LERP interpolates by the third argument");
+	CHECK(!Has(sWGSL, "mix(diffuse, texel0, (texel0).a)"),
+	      "eCO_LERP no longer interpolates by the first argument's alpha");
+
+	// eCO_DECAL shares a case with eCO_REPLACE in the Direct3D backend: both
+	// are D3DTOP_SELECTARG1. It does not blend against anything.
+	desc.stages[0].nColorOp = eCO_DECAL;
+	CHECK(WGPUShaderGen_Build(desc, sWGSL, sError), "eCO_DECAL builds");
+	CHECK(Has(sWGSL, "let c0 = texel0;"), "eCO_DECAL selects its first argument");
+	CHECK(!Has(sWGSL, "mix(acc"), "eCO_DECAL does not blend against the accumulator");
+
+	// eCO_DETAIL appears in no shipped backend, so it reaches their default,
+	// which is a plain modulate rather than the modulate2x the name suggests.
+	desc.stages[0].nColorOp = eCO_DETAIL;
+	CHECK(WGPUShaderGen_Build(desc, sWGSL, sError), "eCO_DETAIL builds");
+	CHECK(Has(sWGSL, "let c0 = (texel0 * diffuse);"),
+	      "eCO_DETAIL is a plain modulate, as the engine's default makes it");
+	CHECK(!Has(sWGSL, "(texel0 * diffuse * 2.0)"),
+	      "eCO_DETAIL is not modulate2x");
+}
+
+//////////////////////////////////////////////////////////////////////////
+//! The engine truncates the third argument, and so must this.
+//!
+//! m_eColorArg is a byte, so "eCA_Constant << 6" -- 256 -- does not fit and is
+//! lost. A shader asking for the constant colour as its third argument gets
+//! eCA_Specular instead. That happens in Crytek's parser, not here; the point
+//! of this test is that reading from the byte reproduces it rather than
+//! quietly "fixing" a shader into rendering something its author never saw.
+//////////////////////////////////////////////////////////////////////////
+static void TestThirdArgumentTruncation()
+{
+	const unsigned char byPacked =
+		(unsigned char)(eCA_Texture | (eCA_Diffuse << 3) | (eCA_Constant << 6));
+
+	CHECK(CryPass_Arg2((int)byPacked) == eCA_Specular,
+	      "eCA_Constant as the third argument truncates to eCA_Specular");
+
+	// The three that do survive a byte.
+	for (int nArg = eCA_Specular; nArg <= eCA_Previous; ++nArg)
+	{
+		const unsigned char byRound = (unsigned char)(nArg << 6);
+
+		char what[128];
+		snprintf(what, sizeof(what),
+		         "third argument %d survives the byte", nArg);
+		CHECK(CryPass_Arg2((int)byRound) == nArg, what);
+	}
+}
+
 int main()
 {
 	TestArgPacking();
@@ -518,6 +456,8 @@ int main()
 	TestAlphaTestBecomesDiscard();
 	TestKeyDistinguishesDescriptions();
 	TestUntexturedStage();
+	TestThreeArgumentOps();
+	TestThirdArgumentTruncation();
 
 	if (g_nFailures)
 	{
