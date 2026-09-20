@@ -1397,6 +1397,90 @@ new one. Confirmed by restoring the inherited no-op:
 const  pixel [255, 255, 255] (wanted [224, 96, 32]) MISMATCH
 ```
 
+## The game module
+
+**CryGame was never in this build.** Not excluded, not stubbed: it was absent
+from `add_subdirectory`, from every module list, and from every compile census.
+93 translation units, 3 MB of source, zero of it ever compiled.
+
+That is the single reason the browser host only ever showed test geometry.
+Everything ported before it is engine; CryGame is what owns players, vehicles,
+weapons, the UI, mission logic and level loading.
+
+### Compiling it: 0/93 to 93/93
+
+Three things, and no more:
+
+- **104 case-sensitive include corrections.** Windows does not care that
+  `stdafx.h` is `StdAfx.h` or that `ibitstream.h` is `CryCommon/IBitStream.h`.
+  `tools/fix_includes.py` already existed for exactly this and had never been
+  pointed here. Running it over `CryGame` **alone** fixed 97 and left the module
+  at 0/93: it indexes only the roots it is given, so cross-module includes went
+  unresolved. The tool was right; the invocation was wrong.
+- **Two header declarations** MSVC 7.1 accepted and standard C++ does not — a
+  member qualified with its own class name, and a `friend class` used as though
+  it were a forward declaration. Both headers are included nearly everywhere in
+  the module, so two lines unblocked dozens of units.
+- **Nine files** of the usual residue: addresses of temporaries, a Win32
+  `GetCurrentTime`, an `imagehlp` directory call, a pointer squeezed into an
+  `int`, and an `INT_MIN` that arrived through `windows.h`.
+
+Two more surfaced only under Emscripten, because both were guarded by
+`#if defined(LINUX64)` and the wasm build is `LINUX32`:
+
+- `SetConfigToActionMap` walked its `va_list` as an array of pointers. That
+  assumes `va_list` **is** a pointer into the argument block — true of the old
+  32-bit x86 ABI, false in general, and under Emscripten it is `void*`, so the
+  arithmetic does not compile. `va_arg` is correct everywhere and is now the
+  only branch.
+- `SendScriptEvent(event, NULL)` is ambiguous across three overloads wherever
+  `NULL` is `__null`. Crytek hit this themselves and disambiguated to the `int`
+  overload for 64-bit Linux; that choice is now the only one.
+
+### Linking it
+
+Zero undefined symbols, first attempt, on both targets — with one collision.
+`GetISystem()` is defined by **both** CrySystem and CryGame. Fine as two DLLs
+with a copy each; a duplicate symbol in one binary.
+
+CrySystem's is the real one, and keeping CryGame's would have been worse than
+the duplicate: it is null until `CXGame::Init` runs, so anything in the module
+calling `GetISystem()` before then would read null from its own copy while a
+perfectly good pointer sat in the other.
+
+### Calling it
+
+`ISystem::CreateGame` normally loads `CryGame.dll`. It does not need to:
+`SGameInitParams::pGame` is an injection point `CSystem` checks **before** it
+looks at `sGameDLL`, so handing it an instance we constructed skips the loader
+entirely. Crytek's own code, already there.
+
+`IGame::Run` is `while(1) { if (!Update()) break; }` — so the browser inversion
+is one call. `Update()` is already public on `IGame`.
+
+**The game now initialises and runs**, and stops exactly where it should:
+
+```
+Creating the game...
+Game Initialization
+[error] Unable to open scripts/classregistry.lua
+[error] Cannot find EntityClassRegistry table in scripts (wrong working folder?)
+[error] Unable to open scripts/main.lua
+```
+
+Those are **assets**. Which is the wall, and it is not a code wall.
+
+### One regression this caused
+
+All five proof-of-life quads went black the moment the game's `Update` ran.
+Not a bug in the game: it owns the frame, correctly, and the host had been
+drawing underneath it.
+
+Isolated by suppressing the game's `Update` and watching the quads return, which
+distinguishes it from `Init` having corrupted renderer state. The quads are now
+drawn **after** the game, as an overlay, so the diagnostics keep working without
+taking the frame away from the thing that should own it.
+
 ### Next
 
 Feeding a whole `SShaderPass` through this rather than one stage at a time,

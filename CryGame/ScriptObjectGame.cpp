@@ -1719,7 +1719,10 @@ int CScriptObjectGame::GetWaterHeight(IFunctionHandler *pH)
 	{
 		CScriptObjectVector vPosition(m_pScriptSystem,true);
 		pH->GetParam(1, *vPosition);		
-		return pH->EndFunction(m_pSystem->GetI3DEngine()->GetWaterLevel(&vPosition.Get()));
+		// [webport] Get() returns by value, so &Get() took the address of a
+		// temporary. GetWaterLevel only reads it during the call.
+		Vec3 vPos = vPosition.Get();
+		return pH->EndFunction(m_pSystem->GetI3DEngine()->GetWaterLevel(&vPos));
 	}
 
 	return pH->EndFunction(m_pSystem->GetI3DEngine()->GetWaterLevel());

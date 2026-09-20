@@ -475,6 +475,58 @@ inline BOOL CreateDirectory(const char* path, void* /*lpSecurityAttributes*/)
 { return (path && mkdir(path, 0755) == 0) ? TRUE : FALSE; }
 
 //////////////////////////////////////////////////////////////////////////
+// MakeSureDirectoryPathExists
+//
+// From imagehlp.dll, which is why it is spelled unlike anything else in the
+// Win32 API. CryGame's savegame writer uses it to create the folder before
+// writing into it.
+//
+// Two behaviours of the original that matter here:
+//
+//   * It takes a FILE path and creates the directories leading to it. The
+//     trailing component is only treated as a directory if the path ends in
+//     a separator.
+//   * An existing directory is success, not failure.
+//
+// The caller has already converted forward slashes to backslashes, because
+// the Win32 version needs that -- so both separators have to be accepted.
+inline BOOL MakeSureDirectoryPathExists(const char* path)
+{
+	if (!path || !path[0])
+		return FALSE;
+
+	char buf[1024];
+	strncpy(buf, path, sizeof(buf) - 1);
+	buf[sizeof(buf) - 1] = 0;
+
+	// Normalise to '/' so one pass handles either spelling.
+	for (char* p = buf; *p; ++p)
+		if (*p == '\\')
+			*p = '/';
+
+	for (char* p = buf + 1; *p; ++p)
+	{
+		if (*p != '/')
+			continue;
+
+		*p = 0;
+		if (mkdir(buf, 0755) != 0 && errno != EEXIST)
+			return FALSE;
+		*p = '/';
+	}
+
+	// A trailing separator means the whole path is a directory.
+	const size_t nLen = strlen(buf);
+	if (nLen && buf[nLen - 1] == '/')
+	{
+		if (mkdir(buf, 0755) != 0 && errno != EEXIST)
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+//////////////////////////////////////////////////////////////////////////
 // GlobalMemoryStatus
 //
 // ScriptObjectSystem.cpp exposes total/available physical memory to Lua.
@@ -1167,6 +1219,25 @@ inline void _splitpath(const char* path, char* drive, char* dir,
 inline int compareTextFileStrings(const char* a, const char* b)
 {
 	return strcasecmp(a ? a : "", b ? b : "");
+}
+
+// Strips carriage returns and line feeds from a C string, in place.
+//
+// The string& form below came first, for the XML parser. CryGame calls this on
+// char buffers instead, and only under "#if defined(LINUX)" -- so Crytek's own
+// Linux build had an overload like this one and it is not in the drop.
+inline void RemoveCRLF(char* sz)
+{
+	if (!sz)
+		return;
+
+	char* pWrite = sz;
+	for (const char* pRead = sz; *pRead; ++pRead)
+	{
+		if (*pRead != '\r' && *pRead != '\n')
+			*pWrite++ = *pRead;
+	}
+	*pWrite = 0;
 }
 
 // Strips carriage returns and line feeds from XML text nodes in place.

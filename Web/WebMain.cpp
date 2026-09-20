@@ -46,6 +46,8 @@
 
 #include "CryHostLog.h"
 
+#include <IGame.h>
+
 #include "GLESConform.h"
 
 #include <emscripten/emscripten.h>
@@ -63,6 +65,11 @@ struct SWebHost
 	CVertexBuffer*	pProofBuffer;
 	SVertexStream	proofIndices;
 	bool			bQuit;
+
+	//! The game module. Null when CryGame could not be created or initialised,
+	//! in which case the host still runs the engine and draws its own
+	//! geometry -- which is what every build before this one did.
+	IGame*			pGame;
 };
 
 static SWebHost	g_host;
@@ -357,6 +364,57 @@ static void PublishPixelSample(IRenderer* pRenderer)
 }
 
 //////////////////////////////////////////////////////////////////////////
+//! Construct the game and hand it to the engine.
+//!
+//! Failure here is NOT fatal. Without game assets the game cannot get far,
+//! and the host is still useful without it -- it draws its own geometry and
+//! runs the shader conformance. So this reports what happened and lets the
+//! frame loop carry on either way, rather than turning a missing .pak into a
+//! blank page.
+//////////////////////////////////////////////////////////////////////////
+static void CreateGame()
+{
+	// Defined by CryGame/Game.cpp. Declared here rather than reached through
+	// the static module registry, because ISystem::CreateGame takes an
+	// already-constructed IGame* and never asks a module for a factory.
+	extern IGame* CreateGameInstance();
+
+	IGame* pGame = CreateGameInstance();
+	if (!pGame)
+	{
+		fprintf(stderr, "[web] CreateGameInstance returned null\n");
+		return;
+	}
+
+	SGameInitParams params;
+	params.pGame            = pGame;
+	params.sGameDLL         = 0;	// never reached: pGame is checked first
+	params.bDedicatedServer = false;
+	params.szGameCmdLine[0] = 0;
+
+	if (!g_host.pSystem->CreateGame(params))
+	{
+		fprintf(stderr, "[web] ISystem::CreateGame failed\n");
+		pGame->Release();
+		return;
+	}
+
+	// CreateGame only registers it. Init is what builds the game's own
+	// subsystems, and it is the call that needs the data.
+	if (!pGame->Init(g_host.pSystem, /*bDedicatedSrv*/ false,
+	                 /*bInEditor*/ false, /*szGameMod*/ ""))
+	{
+		fprintf(stderr, "[web] IGame::Init failed -- continuing without the "
+		                "game. This is expected with no game assets present; "
+		                "see WEBPORT.md.\n");
+		return;
+	}
+
+	g_host.pGame = pGame;
+	printf("[web] game created and initialised\n");
+}
+
+//////////////////////////////////////////////////////////////////////////
 //! Compile the generated shaders with the real driver and check what they
 //! compute. See RenderDll/XRenderGLES/GLESConform.cpp.
 //!
@@ -417,8 +475,6 @@ static void WebFrame(void*)
 
 	pRenderer->BeginFrame();
 
-	DrawProofOfLife(pRenderer);
-
 	// ISystem::Update drives the timer, console, streaming, input and the
 	// script system. It returns false when something has asked to quit.
 	if (!g_host.pSystem->Update(0, 0))
@@ -428,6 +484,34 @@ static void WebFrame(void*)
 		emscripten_cancel_main_loop();
 		return;
 	}
+
+	// The game's own frame.
+	//
+	// CXGame::Run is "while(1) { if (!Update()) break; }" -- a blocking loop,
+	// and a browser cannot have one. Calling Update directly IS the inversion:
+	// Run adds nothing else on this path except the relaunch flag, which no
+	// browser build can act on anyway.
+	if (g_host.pGame && !g_host.pGame->Update())
+	{
+		printf("[web] the game asked to quit after %u frames\n", g_host.nFrame);
+		g_host.pGame = 0;
+	}
+
+	// AFTER the game, deliberately.
+	//
+	// These quads are the host's diagnostics: they are what the browser tests
+	// read back, and between them they exercise dynamic geometry, textures, a
+	// static vertex buffer, the render state and the SetColorOp path.
+	//
+	// They used to be drawn before ISystem::Update, which was fine while
+	// nothing else drew. The moment CryGame started running its own frame it
+	// cleared them, and all five readbacks came back black -- the game owns
+	// the frame, correctly, and the host was drawing underneath it.
+	//
+	// Drawing them last makes them an overlay on whatever the game produced,
+	// so the diagnostics keep working without taking the frame away from the
+	// thing that should own it.
+	DrawProofOfLife(pRenderer);
 
 	pRenderer->Update();
 
@@ -502,6 +586,22 @@ int main(int argc, char** argv)
 	}
 
 	g_host.pRenderer = g_host.pSystem->GetIRenderer();
+	//////////////////////////////////////////////////////////////////////
+	// The game.
+	//
+	// Every build before this one stopped at CreateSystemInterface: the
+	// engine came up, the renderer came up, and nothing owned a player, a
+	// level or a camera -- because CryGame was not in the build at all.
+	//
+	// ISystem::CreateGame normally loads CryGame.dll. It cannot here, and it
+	// does not need to: SGameInitParams::pGame is an injection point that
+	// CSystem checks BEFORE it looks at sGameDLL, so handing it an instance
+	// we constructed ourselves skips the loader entirely. That is the same
+	// shape as the static module registry, and it is already in Crytek's code.
+	//////////////////////////////////////////////////////////////////////
+	printf("Creating the game...\n");
+	CreateGame();
+
 	printf("\nSystem interface created. Renderer: %s\n",
 	       g_host.pRenderer ? "present" : "MISSING");
 

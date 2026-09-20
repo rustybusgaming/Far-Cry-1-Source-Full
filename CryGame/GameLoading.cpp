@@ -118,7 +118,10 @@ struct PropertyWriter : IScriptObjectDumpSink
 			{
 				_SmartScriptObject t(m_pScriptSystem, true);
 				_VERIFY(iskey ? table->GetValue(sName, t) : table->GetAt(nIdx, t));
-				t->Dump(&PropertyWriter(t, stm, m_pScriptSystem));
+				// [webport] Address of a temporary; Dump only uses the sink
+				// during the call.
+				PropertyWriter writer1(t, stm, m_pScriptSystem);
+				t->Dump(&writer1);
 				stm.Write((char)TABLE_END);
 				break;
 			};
@@ -437,15 +440,24 @@ bool CXGame::SaveToStream(CStream &stm, Vec3d *pos, Vec3d *angles,string sFilena
 		stm.AlignWrite();
 
 		_SmartScriptObject props(m_pScriptSystem, true);
-		if(so->GetValue("Properties", props)) props->Dump(&PropertyWriter(props, stm, m_pScriptSystem));
+		// [webport] Address of a temporary; Dump only uses the sink
+		// during the call.
+		PropertyWriter writer2(props, stm, m_pScriptSystem);
+		if(so->GetValue("Properties", props)) props->Dump(&writer2);
 		stm.Write((char)TABLE_END);
 
 		_SmartScriptObject propsi(m_pScriptSystem, true);
-		if(so->GetValue("PropertiesInstance", propsi)) propsi->Dump(&PropertyWriter(propsi, stm, m_pScriptSystem));
+		// [webport] Address of a temporary; Dump only uses the sink
+		// during the call.
+		PropertyWriter writer3(propsi, stm, m_pScriptSystem);
+		if(so->GetValue("PropertiesInstance", propsi)) propsi->Dump(&writer3);
 		stm.Write((char)TABLE_END);
 
 		_SmartScriptObject events(m_pScriptSystem, true);
-		if(so->GetValue("Events", events)) events->Dump(&PropertyWriter(events, stm, m_pScriptSystem));
+		// [webport] Address of a temporary; Dump only uses the sink
+		// during the call.
+		PropertyWriter writer4(events, stm, m_pScriptSystem);
+		if(so->GetValue("Events", events)) events->Dump(&writer4);
 		stm.Write((char)TABLE_END);
 
 		WRITE_COOKIE_NO(stm,78);
@@ -677,6 +689,8 @@ void CXGame::Save(string sFileName, Vec3d *pos, Vec3d *angles,bool bFirstCheckpo
 			pos+=1;
 		}
 
+		// [webport] MakeSureDirectoryPathExists comes from imagehlp.dll and
+		// has no equivalent here. CryCommon/WinBase.h provides the shim.
 		if (MakeSureDirectoryPathExists(sFileName.c_str()))
 		{
 			if(!m_pSystem->WriteCompressedFile((char *)sFileName.c_str(), stm.GetPtr(), stm.GetSize()))

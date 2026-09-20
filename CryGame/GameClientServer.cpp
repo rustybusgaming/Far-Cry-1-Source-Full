@@ -204,6 +204,9 @@ void CXGame::RefreshServerList()
 {
 	m_ServersInfos.clear();
 	if(m_pServerSnooper)
-		m_pServerSnooper->SearchForLANServers(GetCurrentTime());
+		// [webport] GetCurrentTime() is a Win32 macro for GetTickCount,
+		// reached through windows.h. This is the same milliseconds-since-
+		// start value Game.cpp's own GetCurrentTime macro computes.
+		m_pServerSnooper->SearchForLANServers((unsigned int)(GetSystem()->GetITimer()->GetCurrTime() * 1000.f));
 	TRACE("Refresh for lan");
 }

@@ -21,6 +21,7 @@ target_include_directories(Headless PRIVATE
 # Shared with tests/, which links the same set for test_static_modules.
 set(CRY_HEADLESS_MODULES
     CrySystem
+    CryGame
     CryStaticModules
     CryLua
     CryFreeType

@@ -5076,7 +5076,10 @@ void CPlayer::OnDraw(const SRendParams & _RendParams)
 	OnDrawMountedWeapon( _RendParams );
 
 	// if nRecursionLevel is not 0 - use only 3tp person view ( for reflections )
-	int nRecursionLevel = (int)m_pGame->GetSystem()->GetIRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
+	// [webport] EF_Query returns void*, and this packs a small integer into
+	// it. Casting straight to int discards the upper half on a 64-bit build;
+	// going through intptr_t keeps the value and says what is happening.
+	int nRecursionLevel = (int)(intptr_t)m_pGame->GetSystem()->GetIRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
 
 	// draw first person weapon
 	if(m_bFirstPerson && !nRecursionLevel && m_stats.drawfpweapon	&& m_nSelectedWeaponID != -1)
@@ -5771,11 +5774,13 @@ bool	CPlayer::GoStand(bool ignoreSpam)
 			// when calculating BBox
 			GetEntity()->SetFlags( ETY_FLAG_CALCBBOX_ZROTATE );
 
-#if defined(LINUX64)
+			// [webport] Was #if LINUX64 ? "0" : "NULL". SendScriptEvent has three
+			// overloads -- IScriptObject*, const char*, int -- and NULL picks none
+			// of them unambiguously wherever NULL is __null rather than 0, which
+			// includes Emscripten. Crytek already had to disambiguate this for
+			// 64-bit Linux and chose the int overload; that choice is now the only
+			// one, so every platform sends the same event.
 			m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, 0);
-#else
-			m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, NULL);
-#endif
 			m_bStayCrouch = false;
 
 			m_fLastProneTime = m_pTimer->GetCurrTime() + 0.5f;
@@ -5830,11 +5835,13 @@ bool	CPlayer::GoStealth( )
 			GetEntity()->SetFlags( ETY_FLAG_CALCBBOX_ZROTATE );
 
 			m_Running = false;
-#if defined(LINUX64)
+			// [webport] Was #if LINUX64 ? "0" : "NULL". SendScriptEvent has three
+			// overloads -- IScriptObject*, const char*, int -- and NULL picks none
+			// of them unambiguously wherever NULL is __null rather than 0, which
+			// includes Emscripten. Crytek already had to disambiguate this for
+			// 64-bit Linux and chose the int overload; that choice is now the only
+			// one, so every platform sends the same event.
 			m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, 0);
-#else
-			m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, NULL);
-#endif
 			return true;
 		}
 
@@ -5885,11 +5892,13 @@ bool	CPlayer::GoCrouch( )
 			GetEntity()->SetFlags( ETY_FLAG_CALCBBOX_ZROTATE );
 
 			m_Running = false;
-#if defined(LINUX64)
+			// [webport] Was #if LINUX64 ? "0" : "NULL". SendScriptEvent has three
+			// overloads -- IScriptObject*, const char*, int -- and NULL picks none
+			// of them unambiguously wherever NULL is __null rather than 0, which
+			// includes Emscripten. Crytek already had to disambiguate this for
+			// 64-bit Linux and chose the int overload; that choice is now the only
+			// one, so every platform sends the same event.
 			m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, 0);
-#else
-			m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, NULL);
-#endif
 			return true;
 		}
 		// could not change - restore angle if proning
@@ -5952,11 +5961,13 @@ bool	CPlayer::GoProne( )
 		GetEntity()->ClearFlags( ETY_FLAG_CALCBBOX_ZROTATE );
 
 		m_Running = false;
-#if defined(LINUX64)
+		// [webport] Was #if LINUX64 ? "0" : "NULL". SendScriptEvent has three
+		// overloads -- IScriptObject*, const char*, int -- and NULL picks none
+		// of them unambiguously wherever NULL is __null rather than 0, which
+		// includes Emscripten. Crytek already had to disambiguate this for
+		// 64-bit Linux and chose the int overload; that choice is now the only
+		// one, so every platform sends the same event.
 		m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, 0);
-#else
-		m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, NULL);
-#endif
 	}
 
 	m_bStayCrouch = false;
@@ -6007,11 +6018,13 @@ bool	CPlayer::GoSwim( )
 			GetEntity()->SetFlags( ETY_FLAG_CALCBBOX_ZROTATE );
 
 			m_Running = false;
-#if defined(LINUX64)
+			// [webport] Was #if LINUX64 ? "0" : "NULL". SendScriptEvent has three
+			// overloads -- IScriptObject*, const char*, int -- and NULL picks none
+			// of them unambiguously wherever NULL is __null rather than 0, which
+			// includes Emscripten. Crytek already had to disambiguate this for
+			// 64-bit Linux and chose the int overload; that choice is now the only
+			// one, so every platform sends the same event.
 			m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, 0);
-#else
-			m_pEntity->SendScriptEvent(ScriptEvent_StanceChange, NULL);
-#endif
 			m_bStayCrouch = false;
 
 			return true;
@@ -6736,7 +6749,10 @@ void	CPlayer::GiveBinoculars(bool val)
 
 void CPlayer::PreloadInstanceResources(Vec3d vPrevPortalPos, float fPrevPortalDistance, float fTime)
 {
-	int nRecursionLevel = (int)m_pGame->GetSystem()->GetIRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
+	// [webport] EF_Query returns void*, and this packs a small integer into
+	// it. Casting straight to int discards the upper half on a 64-bit build;
+	// going through intptr_t keeps the value and says what is happening.
+	int nRecursionLevel = (int)(intptr_t)m_pGame->GetSystem()->GetIRenderer()->EF_Query(EFQ_RecurseLevel) - 1;
 	if(m_bFirstPerson && !nRecursionLevel && m_stats.drawfpweapon	&& m_nSelectedWeaponID != -1)
 		return;
 

@@ -74,6 +74,7 @@ add_subdirectory(CryPhysics)
 add_subdirectory(CryAnimation)
 add_subdirectory(CryFont)
 add_subdirectory(CrySoundSystem)
+add_subdirectory(CryGame)
 add_subdirectory(RenderDll)
 
 # Resolves the module factories that CSystem would otherwise dlopen(). Must

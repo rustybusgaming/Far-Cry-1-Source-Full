@@ -14,6 +14,9 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "StdAfx.h"
+
+// [webport] INT_MIN/INT_MAX. MSVC reaches these through windows.h.
+#include <limits.h>
 #include "TimeDemoRecorder.h"
 #include <CryFile.h>
 #include "Game.h"
