@@ -102,7 +102,9 @@ def main():
         return 0
 
     httpd, port = serve(directory)
-    url = "http://127.0.0.1:%d/%s" % (port, name)
+    # ?nodata skips the game-data picker. Without it the page waits behind a
+    # dialog for a folder no CI runner has, and every browser test times out.
+    url = "http://127.0.0.1:%d/%s?nodata" % (port, name)
     print("serving %s at %s" % (directory, url))
 
     failures = None

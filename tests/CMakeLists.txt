@@ -134,6 +134,29 @@ set_tests_properties(headless_boot PROPERTIES
     FAIL_REGULAR_EXPRESSION "FAILED: CreateSystemInterface"
 )
 
+# Does "--data <dir>" actually reach the engine's file layer?
+#
+# The host can set a working directory and print a confident report while
+# CryPak never consults it -- the log looks identical either way. This asserts
+# on the ENGINE's output instead, and pairs it with the negative case, so a
+# root that was reachable by accident cannot pass as a working feature.
+#
+# The tree it runs against is synthetic and contains no game content; it cannot
+# contain any, since Far Cry's assets are not redistributable.
+#
+# Native only. Under Emscripten the Headless target is a .js that node has to
+# run, and the switch being tested is a working-directory change -- which is
+# the one thing MEMFS makes meaningless, since there is no directory to point
+# at until the browser half has written one. The browser side of this is
+# WebAssets.cpp and is covered by the page tests below.
+if(NOT EMSCRIPTEN)
+    add_test(NAME asset_root
+             COMMAND ${Python3_EXECUTABLE}
+                     "${CMAKE_CURRENT_SOURCE_DIR}/run_asset_root_test.py"
+                     "$<TARGET_FILE:Headless>")
+    set_tests_properties(asset_root PROPERTIES TIMEOUT 300)
+endif()
+
 # ------------------------------------------------------------------------------
 # Browser tests.
 #

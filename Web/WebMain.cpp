@@ -45,6 +45,8 @@
 #include <stdlib.h>
 
 #include "CryHostLog.h"
+#include "CryAssetRoot.h"
+#include "WebAssets.h"
 
 #include <IGame.h>
 
@@ -544,6 +546,34 @@ static void WebFrame(void*)
 
 //////////////////////////////////////////////////////////////////////////
 
+//////////////////////////////////////////////////////////////////////////
+//! Start the engine. Called once the asset choice has been made.
+//!
+//! Split out of main() because picking a folder is asynchronous and
+//! CreateSystemInterface is not: there is no point inside engine startup where
+//! a file dialog can be awaited, so the choice has to complete BEFORE the
+//! engine exists. Same inversion as the WebGPU device acquisition, same
+//! reason.
+//////////////////////////////////////////////////////////////////////////
+static void StartEngine(int argc, char** argv);
+
+//! Polled from the browser until the user has chosen. One-shot: it cancels
+//! itself before starting anything, so a slow startup cannot re-enter it.
+static void WaitForAssets(void* pArg)
+{
+	if (WebAssets_State() == eWebAssets_Waiting)
+		return;
+
+	emscripten_cancel_main_loop();
+
+	char** argv = (char**)pArg;
+	int argc = 0;
+	while (argv && argv[argc])
+		++argc;
+
+	StartEngine(argc, argv);
+}
+
 int main(int argc, char** argv)
 {
 	printf("CryEngine 1.33 web port -- browser host\n");
@@ -551,6 +581,23 @@ int main(int argc, char** argv)
 
 	memset(&g_host, 0, sizeof(g_host));
 	g_host.pLog = &g_log;
+
+	//////////////////////////////////////////////////////////////////////
+	// Ask for game data first.
+	//
+	// Nothing is uploaded: the files are read in this tab and written into
+	// the page's own filesystem. See WebAssets.h.
+	//////////////////////////////////////////////////////////////////////
+	WebAssets_Begin();
+
+	// argv is valid for the life of the program, so it is safe to hand to the
+	// poll and use after main returns.
+	emscripten_set_main_loop_arg(WaitForAssets, argv, 0, 0);
+	return 0;
+}
+
+static void StartEngine(int argc, char** argv)
+{
 
 	SSystemInitParams params;
 	memset(&params, 0, sizeof(params));
@@ -575,6 +622,23 @@ int main(int argc, char** argv)
 		strncat(params.szSystemCmdLine, " ", 1);
 	}
 
+	//////////////////////////////////////////////////////////////////////
+	// Game data.
+	//
+	// In a browser there is no installation to point at, so whatever the user
+	// supplied has already been written into the Emscripten filesystem by the
+	// time this runs -- see WebAssets.cpp. All that is left is the same step
+	// the native host takes: make it the working directory, and report what
+	// the engine is going to find.
+	//////////////////////////////////////////////////////////////////////
+	if (!CryAssetRoot_Set(WebAssets_Root()))
+		fprintf(stderr, "[web] could not enter the asset root; continuing "
+		                "without game data\n");
+
+	SCryAssetReport assets;
+	CryAssetRoot_Inspect(assets);
+	CryAssetRoot_LogReport(assets);
+
 	printf("Calling CreateSystemInterface...\n");
 	g_host.pSystem = CreateSystemInterface(params);
 
@@ -582,7 +646,7 @@ int main(int argc, char** argv)
 	{
 		printf("FAILED: CreateSystemInterface returned NULL\n");
 		EM_ASM({ window.__cryFailed = true; window.__cryTestDone = true; });
-		return 1;
+		return;
 	}
 
 	g_host.pRenderer = g_host.pSystem->GetIRenderer();
@@ -624,5 +688,4 @@ int main(int argc, char** argv)
 	// loop with it -- this build links with EXIT_RUNTIME=1 for the headless
 	// host's sake.
 	emscripten_exit_with_live_runtime();
-	return 0;
 }

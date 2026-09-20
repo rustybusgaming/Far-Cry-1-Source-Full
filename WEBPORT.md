@@ -1481,6 +1481,73 @@ distinguishes it from `Init` having corrupted renderer state. The quads are now
 drawn **after** the game, as an overlay, so the diagnostics keep working without
 taking the frame away from the thing that should own it.
 
+## Running it against your own copy of the game
+
+**The data cannot come from here.** Far Cry's assets are several GB and are not
+redistributable. They cannot be committed to this repository, baked into a
+build, or shipped in a CI artifact — and owning the game does not change that:
+a licence to play is not a licence to publish. If you own it, keep your copy on
+your own machine; do not add it to a fork.
+
+So every route into the engine starts from a path supplied at run time.
+
+### Natively
+
+```bash
+build/Headless/Headless --data /path/to/FarCry
+```
+
+That directory becomes the working directory, which is all the engine needs:
+CryPak reads everything through paths relative to it. The host then reports
+what is actually there before the engine starts.
+
+### In a browser
+
+There is no installation to point at, so the page asks. A folder picker writes
+the chosen files into the page's own in-memory filesystem, and the root is set
+to where they landed. **Nothing is uploaded**: the files are read in the tab and
+never leave the machine. `Web/WebAssets.cpp`.
+
+Two things about it are worth stating plainly.
+
+**It has a hard size limit, and says so up front.** That filesystem is RAM. A
+whole installation will not fit, so a folder over the budget is refused with an
+explanation rather than left to fail at an allocation somewhere unrelated.
+Scripts, fonts and configuration fit comfortably — and they are exactly what
+stands between the engine booting and the engine getting past script loading.
+A full level needs a different mechanism: reading ranges out of a `File` without
+copying it, which needs synchronous reads the main thread does not have.
+
+**The host waits for the choice.** Picking a folder is asynchronous and
+`CreateSystemInterface` is not, and there is no point inside engine startup
+where a file dialog can be awaited. So `main()` puts the picker up and returns;
+the engine is created afterwards. Same inversion as the WebGPU device
+acquisition, same reason.
+
+`?nodata` in the URL skips the dialog. Not a debug hatch — it is how anything
+unattended runs, including every browser test, which would otherwise sit behind
+a dialog waiting for a folder no CI runner has.
+
+### Verified without any game data
+
+`tests/make_synthetic_assets.py` builds a tree of placeholders: an empty zip, an
+empty font element, a two-line Lua file. No Far Cry content, and there cannot
+be any.
+
+That is enough, because the thing worth testing is whether the root reaches the
+engine's file layer — and the engine does not care what is inside the files at
+the point where it decides where to look. The test asserts on the **engine's**
+output rather than the host's:
+
+```
+Opening pack file /tmp/.../FCData/Localized/english.pak
+```
+
+A host can set a working directory and print a confident report while CryPak
+never consults it; the log looks identical either way. So the test also runs the
+negative case — the same engine without `--data` must not reach that path — or a
+root that happened to be reachable would pass as a working feature.
+
 ### Next
 
 Feeding a whole `SShaderPass` through this rather than one stage at a time,

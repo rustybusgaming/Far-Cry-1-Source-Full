@@ -15,7 +15,9 @@ if(NOT EMSCRIPTEN)
     return()
 endif()
 
-add_executable(CryWeb WebMain.cpp)
+add_executable(CryWeb WebMain.cpp
+               WebAssets.cpp
+               "${CMAKE_SOURCE_DIR}/Hosts/CryAssetRoot.cpp")
 cry_apply_common_settings(CryWeb)
 
 target_include_directories(CryWeb PRIVATE
